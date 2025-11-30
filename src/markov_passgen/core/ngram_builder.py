@@ -18,16 +18,16 @@ class NGramBuilder:
         
         Args:
             text: Input text corpus
-            n: N-gram size (default: 2 for bigrams)
+            n: N-gram size (default: 2 for bigrams, range: 2-5)
             
         Returns:
             N-gram frequency dictionary: {"prefix": {"next_char": count, ...}}
             
         Raises:
-            ValueError: If n < 1, text is empty, or text shorter than n
+            ValueError: If n < 2 or n > 5, text is empty, or text shorter than n
         """
-        if n < 1:
-            raise ValueError("n must be >= 1")
+        if n < 2 or n > 5:
+            raise ValueError("n must be between 2 and 5")
         
         if not text:
             raise ValueError("Text corpus cannot be empty")

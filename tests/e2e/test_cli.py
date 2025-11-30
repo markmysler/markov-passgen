@@ -29,6 +29,7 @@ class TestCLI:
                 '--corpus', corpus_path,
                 '--count', '10',
                 '--length', '8',
+                '--random-seed', '42',  # Use fixed seed for deterministic testing
                 '--output', output_path
             ])
             
@@ -38,16 +39,16 @@ class TestCLI:
             # Check output file exists and has content
             assert os.path.exists(output_path)
             
-            with open(output_path, 'r') as f:
+            with open(output_path, 'r', encoding='utf-8') as f:
                 passwords = f.readlines()
             
             # Should have 10 passwords
             assert len(passwords) == 10
             
             # Each password should be 8 characters (plus newline)
-            for pwd in passwords:
+            for i, pwd in enumerate(passwords):
                 pwd_stripped = pwd.strip()
-                assert len(pwd_stripped) == 8
+                assert len(pwd_stripped) == 8, f"Password {i+1} '{pwd_stripped}' has length {len(pwd_stripped)}, expected 8"
         
         finally:
             os.unlink(corpus_path)
@@ -125,7 +126,7 @@ class TestCLI:
             
             assert result.exit_code == 0
             
-            with open(output_path, 'r') as f:
+            with open(output_path, 'r', encoding='utf-8') as f:
                 passwords = f.readlines()
             
             assert len(passwords) == 100

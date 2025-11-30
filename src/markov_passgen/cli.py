@@ -17,10 +17,26 @@ def main():
 @click.option('--corpus', type=click.Path(exists=True), required=True, help='Path to corpus file')
 @click.option('--count', default=100, help='Number of passwords to generate')
 @click.option('--length', default=12, help='Password length')
+@click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)')
+@click.option('--min-length', type=int, help='Minimum password length')
+@click.option('--max-length', type=int, help='Maximum password length')
+@click.option('--require-digits', is_flag=True, help='Require at least one digit')
+@click.option('--require-uppercase', is_flag=True, help='Require at least one uppercase letter')
+@click.option('--require-lowercase', is_flag=True, help='Require at least one lowercase letter')
+@click.option('--require-special', is_flag=True, help='Require at least one special character')
+@click.option('--min-entropy', type=float, help='Minimum entropy threshold')
+@click.option('--seed-word', type=str, help='Seed word to start generation')
+@click.option('--random-seed', type=int, help='Random seed for deterministic generation')
 @click.option('--output', default='wordlist.txt', help='Output file')
-def generate(corpus, count, length, output):
+def generate(corpus, count, length, ngram_size, min_length, max_length, 
+             require_digits, require_uppercase, require_lowercase, require_special,
+             min_entropy, seed_word, random_seed, output):
     """Generate passwords from corpus"""
     try:
+        from markov_passgen.filters.length_filter import LengthFilter
+        from markov_passgen.filters.character_filter import CharacterFilter
+        from markov_passgen.filters.filter_chain import FilterChain
+        
         # Load corpus
         loader = CorpusLoader()
         click.echo(f"Loading corpus from {corpus}...")
@@ -35,15 +51,57 @@ def generate(corpus, count, length, output):
         click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
         
         # Build n-gram model
-        click.echo("Building n-gram model...")
+        click.echo(f"Building {ngram_size}-gram model...")
         builder = NGramBuilder()
-        model = builder.build(text, n=2)
+        model = builder.build(text, n=ngram_size)
         click.echo(f"Model built with {len(model)} n-grams")
         
-        # Generate passwords
-        click.echo(f"Generating {count} passwords of length {length}...")
+        # Set random seed if specified
         generator = PasswordGenerator(model)
-        passwords = generator.generate(count, length)
+        if random_seed is not None:
+            generator.set_random_seed(random_seed)
+            click.echo(f"Using random seed: {random_seed}")
+        
+        # Generate passwords
+        if min_entropy:
+            click.echo(f"Generating {count} passwords with min entropy {min_entropy}...")
+            results = generator.generate_with_entropy(count, min_entropy)
+            passwords = [pwd for pwd, _ in results]
+        else:
+            click.echo(f"Generating {count} passwords of length {length}...")
+            # Generate more than needed if we have filters
+            multiplier = 10 if (min_length or max_length or require_digits or 
+                               require_uppercase or require_lowercase or require_special) else 1
+            passwords = generator.generate(count * multiplier, length, seed=seed_word)
+        
+        # Apply filters
+        if min_length or max_length or require_digits or require_uppercase or require_lowercase or require_special:
+            click.echo("Applying filters...")
+            filter_chain = FilterChain()
+            
+            # Length filter
+            if min_length or max_length:
+                min_len = min_length or 0
+                max_len = max_length or 1000
+                filter_chain.add_filter(LengthFilter(min_len, max_len))
+            
+            # Character filter
+            if require_digits or require_uppercase or require_lowercase or require_special:
+                filter_chain.add_filter(CharacterFilter(
+                    require_digits=require_digits,
+                    require_uppercase=require_uppercase,
+                    require_lowercase=require_lowercase,
+                    require_special=require_special
+                ))
+            
+            passwords = filter_chain.apply(passwords)
+            click.echo(f"After filtering: {len(passwords)} passwords")
+            
+            # Ensure we have enough
+            if len(passwords) < count:
+                click.echo(f"Warning: Only {len(passwords)} passwords meet filter criteria", err=True)
+            
+            passwords = passwords[:count]
         
         # Write to output file
         with open(output, 'w', encoding='utf-8') as f:

@@ -129,42 +129,73 @@ class PasswordGenerator:
         # Trim to exact length first
         password = password[:length]
         
-        # If password ends with whitespace, replace trailing whitespace with non-space chars
-        while password and password[-1].isspace():
-            # Get non-whitespace characters from model
-            all_chars = set()
+        # Replace ALL leading and trailing whitespace with non-space chars
+        # Get non-whitespace characters from model once
+        all_nonspace_chars = set()
+        for next_chars in self._model.values():
+            all_nonspace_chars.update(char for char in next_chars.keys() if not char.isspace())
+        
+        if not all_nonspace_chars:
+            # Fallback: use any characters if no non-space chars found
+            all_nonspace_chars = set()
             for next_chars in self._model.values():
-                all_chars.update(char for char in next_chars.keys() if not char.isspace())
-            
-            if all_chars:
-                # Replace last character
-                password = password[:-1] + random.choice(list(all_chars))
-            else:
-                # Fallback: use any character
-                all_chars_fallback = set()
-                for next_chars in self._model.values():
-                    all_chars_fallback.update(next_chars.keys())
-                if all_chars_fallback:
-                    password = password[:-1] + random.choice(list(all_chars_fallback))
-                break
+                all_nonspace_chars.update(next_chars.keys())
+        
+        # Replace all leading and trailing spaces
+        if all_nonspace_chars:
+            # Replace leading spaces
+            while password and password[0].isspace():
+                password = random.choice(list(all_nonspace_chars)) + password[1:]
+            # Replace trailing spaces
+            while password and password[-1].isspace():
+                password = password[:-1] + random.choice(list(all_nonspace_chars))
         
         return password
     
     def generate_with_entropy(
-        self, count: int, min_entropy: float
+        self, count: int, min_entropy: float, max_attempts: int = 10000
     ) -> List[Tuple[str, float]]:
         """Generate with entropy scores
-        
-        Note: This is a placeholder for Phase 2
         
         Args:
             count: Number of passwords
             min_entropy: Minimum entropy threshold
+            max_attempts: Maximum generation attempts
             
         Returns:
             List of (password, entropy) tuples
+            
+        Raises:
+            ValueError: If unable to generate enough passwords with min entropy
         """
-        raise NotImplementedError("Entropy generation in Phase 2")
+        from markov_passgen.core.entropy_calculator import EntropyCalculator
+        
+        calculator = EntropyCalculator()
+        results = []
+        attempts = 0
+        
+        # Generate passwords until we have enough or hit max attempts
+        while len(results) < count and attempts < max_attempts:
+            # Generate with varied lengths to increase entropy variance
+            length = 12 + (attempts % 8)  # Length 12-19
+            passwords = self.generate(1, length)
+            
+            for pwd in passwords:
+                entropy = calculator.calculate_markov_entropy(pwd, self._model)
+                if entropy >= min_entropy:
+                    results.append((pwd, entropy))
+                    if len(results) >= count:
+                        break
+            
+            attempts += 1
+        
+        if len(results) < count:
+            raise ValueError(
+                f"Unable to generate {count} passwords with min entropy {min_entropy}. "
+                f"Only generated {len(results)} after {attempts} attempts."
+            )
+        
+        return results[:count]
     
     def set_random_seed(self, seed: int) -> None:
         """Enable deterministic generation

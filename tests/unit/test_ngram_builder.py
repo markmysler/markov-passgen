@@ -29,10 +29,16 @@ class TestNGramBuilder:
             builder.build("", n=2)
     
     def test_build_with_invalid_n(self):
-        """Test building with n < 1 raises ValueError"""
+        """Test building with n < 2 or n > 5 raises ValueError"""
         builder = NGramBuilder()
-        with pytest.raises(ValueError, match="n must be >= 1"):
+        with pytest.raises(ValueError, match="n must be between 2 and 5"):
             builder.build("hello", n=0)
+        
+        with pytest.raises(ValueError, match="n must be between 2 and 5"):
+            builder.build("hello", n=1)
+        
+        with pytest.raises(ValueError, match="n must be between 2 and 5"):
+            builder.build("hello world", n=6)
     
     def test_build_corpus_shorter_than_n(self):
         """Test building when corpus length < n"""
