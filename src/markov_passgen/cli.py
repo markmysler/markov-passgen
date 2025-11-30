@@ -14,7 +14,9 @@ def main():
 
 
 @main.command()
-@click.option('--corpus', type=click.Path(exists=True), required=True, help='Path to corpus file')
+@click.option('--corpus', type=click.Path(exists=True), help='Path to single corpus file')
+@click.option('--corpus-list', multiple=True, type=click.Path(exists=True), help='Paths to multiple corpus files (repeatable)')
+@click.option('--corpus-weights', type=str, help='Comma-separated weights for each corpus (e.g., "1.0,2.0,1.5")')
 @click.option('--count', default=100, help='Number of passwords to generate')
 @click.option('--length', default=12, help='Password length')
 @click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)')
@@ -34,7 +36,7 @@ def main():
 @click.option('--leet-speak', type=float, help='Apply leet speak transformation (0.0-1.0 intensity)')
 @click.option('--case-variation', type=click.Choice(['random', 'alternating', 'capitalize']), help='Apply case variation')
 @click.option('--output', default='wordlist.txt', help='Output file')
-def generate(corpus, count, length, ngram_size, min_length, max_length, 
+def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min_length, max_length, 
              require_digits, require_uppercase, require_lowercase, require_special,
              min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
              remove_digits, normalize_whitespace, leet_speak, case_variation, output):
@@ -47,6 +49,16 @@ def generate(corpus, count, length, ngram_size, min_length, max_length,
         from markov_passgen.transformers.password_transformer import (
             LeetSpeakTransformer, CaseVariationTransformer, TransformerChain
         )
+        from markov_passgen.core.multi_corpus_manager import MultiCorpusManager
+        
+        # Validate corpus options
+        if not corpus and not corpus_list:
+            click.echo("Error: Must specify either --corpus or --corpus-list", err=True)
+            raise click.Abort()
+        
+        if corpus and corpus_list:
+            click.echo("Error: Cannot use both --corpus and --corpus-list", err=True)
+            raise click.Abort()
         
         # Create text cleaner if any preprocessing options are set
         cleaner = None
@@ -59,18 +71,49 @@ def generate(corpus, count, length, ngram_size, min_length, max_length,
             )
             click.echo("Text preprocessing enabled")
         
-        # Load corpus
-        loader = CorpusLoader()
-        click.echo(f"Loading corpus from {corpus}...")
-        text = loader.load_from_file(corpus, cleaner=cleaner)
-        
-        # Validate corpus
-        if not loader.validate_corpus(text):
-            click.echo("Error: Corpus must be at least 100 characters", err=True)
-            raise click.Abort()
-        
-        stats = loader.get_corpus_stats()
-        click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
+        # Load corpus - single or multi
+        text = None
+        if corpus_list:
+            # Multi-corpus mode
+            click.echo(f"Loading {len(corpus_list)} corpus files...")
+            
+            # Parse weights if provided
+            weights = None
+            if corpus_weights:
+                try:
+                    weights = [float(w.strip()) for w in corpus_weights.split(',')]
+                    if len(weights) != len(corpus_list):
+                        click.echo(f"Error: Number of weights ({len(weights)}) must match number of corpora ({len(corpus_list)})", err=True)
+                        raise click.Abort()
+                    click.echo(f"Using corpus weights: {weights}")
+                except ValueError:
+                    click.echo("Error: Invalid weight format. Use comma-separated numbers (e.g., '1.0,2.0,1.5')", err=True)
+                    raise click.Abort()
+            
+            # Create multi-corpus manager
+            manager = MultiCorpusManager.from_files(list(corpus_list), weights=weights, cleaner=cleaner)
+            
+            # Display corpus stats
+            stats = manager.get_corpus_stats()
+            for name, corpus_stats in stats.items():
+                click.echo(f"  {name}: {corpus_stats['char_count']} chars, {corpus_stats['word_count']} words, weight={corpus_stats['weight']}")
+            
+            # Get merged corpus
+            text = manager.get_merged_corpus()
+            click.echo(f"Merged corpus: {len(text)} chars")
+        else:
+            # Single corpus mode
+            loader = CorpusLoader()
+            click.echo(f"Loading corpus from {corpus}...")
+            text = loader.load_from_file(corpus, cleaner=cleaner)
+            
+            # Validate corpus
+            if not loader.validate_corpus(text):
+                click.echo("Error: Corpus must be at least 100 characters", err=True)
+                raise click.Abort()
+            
+            stats = loader.get_corpus_stats()
+            click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
         
         # Build n-gram model
         click.echo(f"Building {ngram_size}-gram model...")
