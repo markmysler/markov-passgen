@@ -27,7 +27,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/yourusername/markov-passgen.git
+   git clone https://github.com/markmysler/markov-passgen.git
    cd markov-passgen
    ```
 

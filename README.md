@@ -29,7 +29,7 @@ pip install markov-passgen
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/markov-passgen.git
+git clone https://github.com/markmysler/markov-passgen.git
 cd markov-passgen
 pip install -e .
 ```
@@ -37,7 +37,7 @@ pip install -e .
 ### Development Installation
 
 ```bash
-git clone https://github.com/yourusername/markov-passgen.git
+git clone https://github.com/markmysler/markov-passgen.git
 cd markov-passgen
 pip install -e ".[dev]"
 ```
@@ -405,8 +405,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📮 Contact
 
-- GitHub: [yourusername/markov-passgen](https://github.com/yourusername/markov-passgen)
-- Issues: [GitHub Issues](https://github.com/yourusername/markov-passgen/issues)
+- GitHub: [markmysler/markov-passgen](https://github.com/markmysler/markov-passgen)
+- Issues: [GitHub Issues](https://github.com/markmysler/markov-passgen/issues)
 
 ---
 
