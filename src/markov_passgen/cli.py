@@ -31,17 +31,22 @@ def main():
 @click.option('--remove-punctuation', is_flag=True, help='Remove punctuation from corpus')
 @click.option('--remove-digits', is_flag=True, help='Remove digits from corpus')
 @click.option('--normalize-whitespace', is_flag=True, help='Normalize whitespace in corpus')
+@click.option('--leet-speak', type=float, help='Apply leet speak transformation (0.0-1.0 intensity)')
+@click.option('--case-variation', type=click.Choice(['random', 'alternating', 'capitalize']), help='Apply case variation')
 @click.option('--output', default='wordlist.txt', help='Output file')
 def generate(corpus, count, length, ngram_size, min_length, max_length, 
              require_digits, require_uppercase, require_lowercase, require_special,
              min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
-             remove_digits, normalize_whitespace, output):
+             remove_digits, normalize_whitespace, leet_speak, case_variation, output):
     """Generate passwords from corpus"""
     try:
         from markov_passgen.filters.length_filter import LengthFilter
         from markov_passgen.filters.character_filter import CharacterFilter
         from markov_passgen.filters.filter_chain import FilterChain
         from markov_passgen.transformers.text_cleaner import TextCleaner
+        from markov_passgen.transformers.password_transformer import (
+            LeetSpeakTransformer, CaseVariationTransformer, TransformerChain
+        )
         
         # Create text cleaner if any preprocessing options are set
         cleaner = None
@@ -79,17 +84,36 @@ def generate(corpus, count, length, ngram_size, min_length, max_length,
             generator.set_random_seed(random_seed)
             click.echo(f"Using random seed: {random_seed}")
         
+        # Create password transformer chain if any transformations are specified
+        transformer_chain = None
+        if leet_speak or case_variation:
+            transformer_chain = TransformerChain()
+            
+            if leet_speak is not None:
+                if not 0.0 <= leet_speak <= 1.0:
+                    click.echo("Error: --leet-speak must be between 0.0 and 1.0", err=True)
+                    raise click.Abort()
+                transformer_chain.add(LeetSpeakTransformer(intensity=leet_speak))
+                click.echo(f"Leet speak transformation enabled (intensity: {leet_speak})")
+            
+            if case_variation:
+                transformer_chain.add(CaseVariationTransformer(mode=case_variation))
+                click.echo(f"Case variation enabled (mode: {case_variation})")
+        
         # Generate passwords
         if min_entropy:
             click.echo(f"Generating {count} passwords with min entropy {min_entropy}...")
             results = generator.generate_with_entropy(count, min_entropy)
             passwords = [pwd for pwd, _ in results]
+            # Apply transformers to entropy-based passwords
+            if transformer_chain:
+                passwords = transformer_chain.transform_batch(passwords)
         else:
             click.echo(f"Generating {count} passwords of length {length}...")
             # Generate more than needed if we have filters
             multiplier = 10 if (min_length or max_length or require_digits or 
                                require_uppercase or require_lowercase or require_special) else 1
-            passwords = generator.generate(count * multiplier, length, seed=seed_word)
+            passwords = generator.generate(count * multiplier, length, seed=seed_word, transformer=transformer_chain)
         
         # Apply filters
         if min_length or max_length or require_digits or require_uppercase or require_lowercase or require_special:

@@ -20,13 +20,14 @@ class PasswordGenerator:
         self._n = len(next(iter(ngram_model.keys()))) if ngram_model else 0
         self._generation_count = 0
     
-    def generate(self, count: int, length: int, seed: Optional[str] = None) -> List[str]:
+    def generate(self, count: int, length: int, seed: Optional[str] = None, transformer=None) -> List[str]:
         """Generate passwords
         
         Args:
             count: Number of passwords to generate
             length: Length of each password
             seed: Optional seed string to start generation
+            transformer: Optional password transformer to apply
             
         Returns:
             List of generated passwords
@@ -50,6 +51,11 @@ class PasswordGenerator:
         
         for _ in range(count):
             password = self._generate_one(length, seed)
+            
+            # Apply transformer if provided
+            if transformer is not None:
+                password = transformer.transform(password)
+            
             passwords.append(password)
             self._generation_count += 1
         
