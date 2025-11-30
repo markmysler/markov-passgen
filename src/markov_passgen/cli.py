@@ -14,6 +14,150 @@ def main():
 
 
 @main.command()
+@click.option('--corpus', type=click.Path(exists=True), help='Path to corpus file', required=True)
+@click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)')
+@click.option('--ngram-freq', type=click.Path(), help='Output path for n-gram frequency plot')
+@click.option('--char-dist', type=click.Path(), help='Output path for character distribution plot')
+@click.option('--top-n', default=20, type=int, help='Number of top items to display in plots')
+def visualize_corpus(corpus, ngram_size, ngram_freq, char_dist, top_n):
+    """Visualize corpus n-gram and character distributions"""
+    try:
+        from markov_passgen.visualization.visualizer import NGramVisualizer
+        
+        # Load corpus
+        loader = CorpusLoader()
+        click.echo(f"Loading corpus from {corpus}...")
+        text = loader.load_from_file(corpus)
+        
+        if not loader.validate_corpus(text):
+            click.echo("Error: Corpus must be at least 100 characters", err=True)
+            raise click.Abort()
+        
+        # Build n-gram model
+        builder = NGramBuilder()
+        model = builder.build(text, n=ngram_size)
+        click.echo(f"Built {ngram_size}-gram model with {len(model)} n-grams")
+        
+        # Create visualizer
+        visualizer = NGramVisualizer()
+        
+        # Plot n-gram frequencies
+        if ngram_freq:
+            click.echo(f"Generating n-gram frequency plot...")
+            visualizer.plot_ngram_frequencies(model, top_n=top_n, output_path=ngram_freq)
+            click.echo(f"N-gram frequency plot saved to {ngram_freq}")
+        
+        # Plot character distribution
+        if char_dist:
+            click.echo(f"Generating character distribution plot...")
+            visualizer.plot_character_distribution(text, top_n=top_n, output_path=char_dist)
+            click.echo(f"Character distribution plot saved to {char_dist}")
+        
+        if not ngram_freq and not char_dist:
+            click.echo("No visualization output specified. Use --ngram-freq or --char-dist", err=True)
+        
+    except click.Abort:
+        raise
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@main.command()
+@click.option('--wordlist', type=click.Path(exists=True), required=True, help='Path to password wordlist file')
+@click.option('--entropy-dist', type=click.Path(), help='Output path for entropy distribution plot')
+@click.option('--length-dist', type=click.Path(), help='Output path for length distribution plot')
+@click.option('--bins', default=30, type=int, help='Number of histogram bins')
+def visualize_passwords(wordlist, entropy_dist, length_dist, bins):
+    """Visualize password entropy and length distributions"""
+    try:
+        from markov_passgen.visualization.visualizer import NGramVisualizer
+        from markov_passgen.core.entropy_calculator import EntropyCalculator
+        
+        # Load passwords
+        click.echo(f"Loading passwords from {wordlist}...")
+        with open(wordlist, 'r', encoding='utf-8') as f:
+            passwords = [line.strip() for line in f if line.strip()]
+        
+        if not passwords:
+            click.echo("Error: Wordlist is empty", err=True)
+            raise click.Abort()
+        
+        click.echo(f"Loaded {len(passwords)} passwords")
+        
+        # Create visualizer
+        visualizer = NGramVisualizer()
+        
+        # Plot entropy distribution
+        if entropy_dist:
+            click.echo(f"Generating entropy distribution plot...")
+            entropy_calc = EntropyCalculator()
+            visualizer.plot_entropy_distribution(passwords, entropy_calc, bins=bins, output_path=entropy_dist)
+            click.echo(f"Entropy distribution plot saved to {entropy_dist}")
+        
+        # Plot length distribution
+        if length_dist:
+            click.echo(f"Generating length distribution plot...")
+            visualizer.plot_length_distribution(passwords, bins=bins, output_path=length_dist)
+            click.echo(f"Length distribution plot saved to {length_dist}")
+        
+        if not entropy_dist and not length_dist:
+            click.echo("No visualization output specified. Use --entropy-dist or --length-dist", err=True)
+        
+    except click.Abort:
+        raise
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@main.command()
+@click.option('--corpus-list', multiple=True, type=click.Path(exists=True), required=True, help='Paths to corpus files (repeatable)')
+@click.option('--corpus-weights', type=str, help='Comma-separated weights for each corpus (e.g., "1.0,2.0,1.5")')
+@click.option('--output', type=click.Path(), required=True, help='Output path for corpus comparison plot')
+def visualize_multi_corpus(corpus_list, corpus_weights, output):
+    """Visualize comparison of multiple corpora"""
+    try:
+        from markov_passgen.visualization.visualizer import NGramVisualizer
+        from markov_passgen.core.multi_corpus_manager import MultiCorpusManager
+        
+        click.echo(f"Loading {len(corpus_list)} corpus files...")
+        
+        # Parse weights if provided
+        weights = None
+        if corpus_weights:
+            try:
+                weights = [float(w.strip()) for w in corpus_weights.split(',')]
+                if len(weights) != len(corpus_list):
+                    click.echo(f"Error: Number of weights ({len(weights)}) must match number of corpora ({len(corpus_list)})", err=True)
+                    raise click.Abort()
+            except ValueError:
+                click.echo("Error: Invalid weight format. Use comma-separated numbers (e.g., '1.0,2.0,1.5')", err=True)
+                raise click.Abort()
+        
+        # Create multi-corpus manager
+        manager = MultiCorpusManager.from_files(list(corpus_list), weights=weights)
+        
+        # Get corpus statistics
+        stats = manager.get_corpus_stats()
+        click.echo(f"Loaded {len(stats)} corpora")
+        
+        # Create visualizer
+        visualizer = NGramVisualizer()
+        
+        # Plot corpus comparison
+        click.echo(f"Generating corpus comparison plot...")
+        visualizer.plot_corpus_comparison(stats, output_path=output)
+        click.echo(f"Corpus comparison plot saved to {output}")
+        
+    except click.Abort:
+        raise
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@main.command()
 @click.option('--corpus', type=click.Path(exists=True), help='Path to single corpus file')
 @click.option('--corpus-list', multiple=True, type=click.Path(exists=True), help='Paths to multiple corpus files (repeatable)')
 @click.option('--corpus-weights', type=str, help='Comma-separated weights for each corpus (e.g., "1.0,2.0,1.5")')
