@@ -1,6 +1,6 @@
 """Corpus loading and validation"""
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 
 class CorpusLoader:
@@ -12,14 +12,15 @@ class CorpusLoader:
     def __init__(self):
         self._last_corpus = ""
     
-    def load_from_file(self, filepath: str) -> str:
+    def load_from_file(self, filepath: str, cleaner=None) -> str:
         """Load corpus from single file
         
         Args:
             filepath: Path to text file
+            cleaner: Optional text cleaner instance for preprocessing
             
         Returns:
-            File contents as string
+            File contents as string (optionally cleaned)
             
         Raises:
             FileNotFoundError: If file doesn't exist
@@ -27,14 +28,20 @@ class CorpusLoader:
         """
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
+        
+        # Apply text cleaning if provided
+        if cleaner is not None:
+            content = cleaner.clean(content)
+        
         self._last_corpus = content
         return content
     
-    def load_from_files(self, filepaths: List[str]) -> str:
+    def load_from_files(self, filepaths: List[str], cleaner=None) -> str:
         """Load and merge multiple corpus files
         
         Args:
             filepaths: List of file paths
+            cleaner: Optional text cleaner instance for preprocessing
             
         Returns:
             Merged corpus as string
@@ -44,7 +51,7 @@ class CorpusLoader:
         """
         corpora = []
         for filepath in filepaths:
-            corpus = self.load_from_file(filepath)
+            corpus = self.load_from_file(filepath, cleaner=cleaner)
             corpora.append(corpus)
         merged = " ".join(corpora)
         self._last_corpus = merged

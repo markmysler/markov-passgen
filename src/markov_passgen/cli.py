@@ -27,20 +27,37 @@ def main():
 @click.option('--min-entropy', type=float, help='Minimum entropy threshold')
 @click.option('--seed-word', type=str, help='Seed word to start generation')
 @click.option('--random-seed', type=int, help='Random seed for deterministic generation')
+@click.option('--lowercase', is_flag=True, help='Convert corpus to lowercase')
+@click.option('--remove-punctuation', is_flag=True, help='Remove punctuation from corpus')
+@click.option('--remove-digits', is_flag=True, help='Remove digits from corpus')
+@click.option('--normalize-whitespace', is_flag=True, help='Normalize whitespace in corpus')
 @click.option('--output', default='wordlist.txt', help='Output file')
 def generate(corpus, count, length, ngram_size, min_length, max_length, 
              require_digits, require_uppercase, require_lowercase, require_special,
-             min_entropy, seed_word, random_seed, output):
+             min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
+             remove_digits, normalize_whitespace, output):
     """Generate passwords from corpus"""
     try:
         from markov_passgen.filters.length_filter import LengthFilter
         from markov_passgen.filters.character_filter import CharacterFilter
         from markov_passgen.filters.filter_chain import FilterChain
+        from markov_passgen.transformers.text_cleaner import TextCleaner
+        
+        # Create text cleaner if any preprocessing options are set
+        cleaner = None
+        if lowercase or remove_punctuation or remove_digits or normalize_whitespace:
+            cleaner = TextCleaner(
+                lowercase=lowercase,
+                remove_punctuation=remove_punctuation,
+                remove_digits=remove_digits,
+                normalize_whitespace=normalize_whitespace
+            )
+            click.echo("Text preprocessing enabled")
         
         # Load corpus
         loader = CorpusLoader()
         click.echo(f"Loading corpus from {corpus}...")
-        text = loader.load_from_file(corpus)
+        text = loader.load_from_file(corpus, cleaner=cleaner)
         
         # Validate corpus
         if not loader.validate_corpus(text):
