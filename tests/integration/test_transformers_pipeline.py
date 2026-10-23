@@ -1,4 +1,4 @@
-"""Integration tests for Phase 4 password transformations"""
+"""Integration tests: password transformations on generated candidates"""
 
 import pytest
 import random

@@ -66,7 +66,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=src/markov_passgen --cov-report=html --cov-report=term-missing"
+# Coverage is opt-in (pytest --cov=markov_passgen); CI turns it on
+addopts = "-ra"
 
 [tool.black]
 line-length = 100

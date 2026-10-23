@@ -1,4 +1,4 @@
-"""Integration tests for Phase 2 features"""
+"""Integration tests: corpus -> model -> generator -> filters"""
 
 import pytest
 import tempfile

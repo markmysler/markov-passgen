@@ -1,4 +1,4 @@
-"""Integration tests for Phase 6: Visualization features"""
+"""Integration tests: visualisation of models, wordlists and corpora"""
 
 import pytest
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""Integration tests for Phase 3 text processing"""
+"""Integration tests: corpus cleaning before modelling"""
 
 import pytest
 import tempfile

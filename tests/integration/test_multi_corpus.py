@@ -1,4 +1,4 @@
-"""Integration tests for Phase 5: Multi-corpus features"""
+"""Integration tests: weighted multi-corpus generation"""
 
 import pytest
 from pathlib import Path
