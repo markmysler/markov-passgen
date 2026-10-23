@@ -77,7 +77,6 @@ target-version = "py39"
 select = ["E", "F", "W", "I", "B"]
 
 [tool.mypy]
-python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 
