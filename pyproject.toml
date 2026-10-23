@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Markov PassGen", email = "bot@markovpassgen.dev"}
+    {name = "Mark Mysler"}
 ]
 keywords = ["password", "generator", "markov", "security", "wordlist"]
 classifiers = [
@@ -31,12 +31,16 @@ classifiers = [
 
 dependencies = [
     "click>=8.0.0",
-    "tqdm>=4.65.0",
-    "graphviz>=0.20",
 ]
 
 [project.optional-dependencies]
+viz = [
+    "matplotlib>=3.5",
+    "numpy>=1.21",
+    "seaborn>=0.12",
+]
 dev = [
+    "markov-passgen[viz]",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
@@ -45,6 +49,11 @@ dev = [
     "build>=0.10.0",
     "twine>=4.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/markmysler/markov-passgen"
+Source = "https://github.com/markmysler/markov-passgen"
+Issues = "https://github.com/markmysler/markov-passgen/issues"
 
 [project.scripts]
 markov-passgen = "markov_passgen.cli:main"

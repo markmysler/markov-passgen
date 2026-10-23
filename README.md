@@ -23,6 +23,12 @@ Generate human-like password candidates with Markov chains. Train a character n-
 pip install markov-passgen
 ```
 
+The plotting commands need matplotlib, seaborn and numpy, which are an optional extra:
+
+```bash
+pip install "markov-passgen[viz]"
+```
+
 From source:
 
 ```bash

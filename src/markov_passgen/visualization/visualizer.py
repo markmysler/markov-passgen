@@ -1,10 +1,17 @@
 """Visualization tools for Markov chain analysis"""
 
 from typing import Dict, List, Optional, Tuple
-import matplotlib.pyplot as plt
-import seaborn as sns
 from collections import Counter
-import numpy as np
+
+try:
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import seaborn as sns
+except ImportError as exc:  # the plotting libraries are an optional extra
+    raise ImportError(
+        f"Plotting needs extra packages ({exc.name} is missing). "
+        'Install them with: pip install "markov-passgen[viz]"'
+    ) from exc
 
 
 class NGramVisualizer:
