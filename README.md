@@ -43,19 +43,34 @@ pip install -e ".[dev]"
 ### Command line
 
 ```bash
-markov-passgen generate --corpus examples/english_words.txt --ngram-size 3 --count 10 --random-seed 7 --output candidates.txt
+markov-passgen generate --corpus examples/english_words.txt --ngram-size 3 --count 12 --random-seed 7 --output candidates.txt
 ```
 
-Require character classes and apply leetspeak:
+```text
+occasist  pager  mist  watchemsell  ract  pink  tomachink  pret  stroke  slow  scies  neting
+```
+
+Each line of the corpus is one training entry, so candidates start and end the way entries do and their lengths follow the data. Bound the length, require character classes and mix in a second corpus:
 
 ```bash
 markov-passgen generate \
-    --corpus examples/common_passwords.txt \
-    --count 50 \
-    --length 12 \
+    --corpus-list examples/common_passwords.txt \
+    --corpus-list examples/english_words.txt \
+    --corpus-weights "0.6,0.4" \
+    --ngram-size 3 \
+    --min-length 8 --max-length 14 \
     --require-digits \
-    --leet-speak 0.3 \
-    --output wordlist.txt
+    --count 8 --random-seed 7
+```
+
+```text
+qwerty1234567  password123  1234567p  password123456  qwerty1234567  surerty123  password1  flowerty123
+```
+
+Apply leetspeak to fixed-length candidates:
+
+```bash
+markov-passgen generate --corpus examples/common_passwords.txt --count 50 --length 12 --leet-speak 0.3 --output wordlist.txt
 ```
 
 Combine several corpora with weights:
@@ -81,13 +96,15 @@ markov-passgen visualize-passwords --wordlist wordlist.txt --entropy-dist entrop
 from markov_passgen.core import CorpusLoader, NGramBuilder, PasswordGenerator
 
 text = CorpusLoader().load_from_file("examples/english_words.txt")
-model = NGramBuilder().build(text, n=3)
+model = NGramBuilder().build_lines(text, n=3)  # one entry per line
 
 generator = PasswordGenerator(model)
 generator.set_random_seed(7)
-for password in generator.generate(count=10, length=12):
+for password in generator.generate(count=10, min_length=6, max_length=12):
     print(password)
 ```
+
+`generate(count, length=12)` gives an exact length instead. `NGramBuilder().build(text, n)` reads the text as one continuous stream (for prose rather than lists); such a model has no entry ends, so it always needs a length.
 
 ## Usage examples
 
@@ -102,7 +119,7 @@ chain = FilterChain()
 chain.add_filter(LengthFilter(min_length=10, max_length=16))
 chain.add_filter(CharacterFilter(require_digits=True, require_lowercase=True))
 
-candidates = generator.generate(count=500, length=12)
+candidates = generator.generate(count=500)
 strong_enough = chain.apply(candidates)
 ```
 
@@ -143,19 +160,21 @@ print(sub.transform("bass"))                               # ba$$
 ### Multiple corpora
 
 ```python
-from markov_passgen.core import MultiCorpusManager, NGramBuilder, PasswordGenerator
+from markov_passgen.core import MultiCorpusManager, PasswordGenerator
 
 manager = MultiCorpusManager()
 manager.add_corpus("passwords", "examples/common_passwords.txt", weight=0.5)
 manager.add_corpus("words", "examples/english_words.txt", weight=0.3)
 manager.add_corpus("users", "examples/usernames.txt", weight=0.2)
 
-model = NGramBuilder().build(manager.get_merged_corpus(), n=3)
-candidates = PasswordGenerator(model).generate(count=50, length=12)
+model = manager.build_model(n=3)
+candidates = PasswordGenerator(model).generate(count=50)
 
 for name, stats in manager.get_corpus_stats().items():
     print(f"{name}: {stats['char_count']} chars, weight={stats['weight']}")
 ```
+
+A weight is the corpus's share of the merged model: here half of all transitions come from the password list, even though the word list is 30 times larger.
 
 ### Entropy
 
@@ -194,11 +213,12 @@ Run `markov-passgen <command> --help` for the full list.
 |---|---|
 | `--corpus PATH` | Corpus file |
 | `--corpus-list PATH` | Corpus file for multi-corpus mode (repeat for each file) |
-| `--corpus-weights "W1,W2,..."` | Comma-separated weights, one per `--corpus-list` |
+| `--corpus-weights "W1,W2,..."` | Comma-separated weights, one per `--corpus-list`; each is that corpus's share of the model |
 | `--ngram-size 2-5` | N-gram size (default 2) |
 | `--count N` | Number of candidates (default 100) |
-| `--length N` | Length of each candidate (default 12) |
-| `--min-length N`, `--max-length N` | Keep only candidates in this length range |
+| `--min-length N`, `--max-length N` | Length range to generate in (default: whatever the corpus suggests, up to 64) |
+| `--length N` | Exact length for every candidate |
+| `--stream` | Read the corpus as one continuous text instead of one entry per line (for prose); candidates are then 12 characters unless `--length` is set |
 | `--require-digits`, `--require-uppercase`, `--require-lowercase`, `--require-special` | Keep only candidates containing that character class |
 | `--min-entropy X` | Keep only candidates whose Markov score (average bits per character) is at least X |
 | `--seed-word TEXT` | Start every candidate with this text |
@@ -219,6 +239,13 @@ Run `markov-passgen <command> --help` for the full list.
 ### `visualize-multi-corpus`
 
 `--corpus-list PATH` (repeat, required), `--corpus-weights "W1,W2,..."`, `--output PATH` (required)
+
+## How it works
+
+- **Training.** Each corpus line is padded with start and end markers, and the model counts which character follows every *n*-character context. It learns how entries begin and end, and never learns a jump from the end of one line into the next.
+- **Generating.** A candidate starts from the start context and samples one character at a time, weighted by the counts, until the model picks the end marker (never before `--min-length`, never past `--max-length`). When a context never occurred in the corpus, the generator backs off to the last *n*−1, *n*−2, … characters, down to plain character frequencies. So output stays faithful to the corpus instead of being padded with random characters.
+- **Several corpora.** Each corpus gets its own model, and its counts are scaled so it makes up its weight's share of the merged model.
+- **Filters** (character classes, entropy) run on generated candidates; the CLI keeps generating in batches until it has `--count` that pass.
 
 ## Development
 

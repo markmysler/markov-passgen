@@ -162,10 +162,11 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
 @click.option('--corpus-list', multiple=True, type=click.Path(exists=True), help='Paths to multiple corpus files (repeatable)')
 @click.option('--corpus-weights', type=str, help='Comma-separated weights for each corpus (e.g., "1.0,2.0,1.5")')
 @click.option('--count', default=100, help='Number of passwords to generate')
-@click.option('--length', default=12, help='Password length')
+@click.option('--length', type=click.IntRange(min=1), help='Exact length of every candidate (default: lengths follow the corpus)')
 @click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)')
-@click.option('--min-length', type=int, help='Minimum password length')
-@click.option('--max-length', type=int, help='Maximum password length')
+@click.option('--min-length', type=click.IntRange(min=1), help='Shortest candidate to generate')
+@click.option('--max-length', type=click.IntRange(min=1), help='Longest candidate to generate (default 64)')
+@click.option('--stream', is_flag=True, help='Read the corpus as one continuous text instead of one entry per line')
 @click.option('--require-digits', is_flag=True, help='Require at least one digit')
 @click.option('--require-uppercase', is_flag=True, help='Require at least one uppercase letter')
 @click.option('--require-lowercase', is_flag=True, help='Require at least one lowercase letter')
@@ -180,8 +181,8 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
 @click.option('--leet-speak', type=float, help='Apply leet speak transformation (0.0-1.0 intensity)')
 @click.option('--case-variation', type=click.Choice(['random', 'alternating', 'capitalize']), help='Apply case variation')
 @click.option('--output', default='wordlist.txt', help='Output file')
-def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min_length, max_length, 
-             require_digits, require_uppercase, require_lowercase, require_special,
+def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min_length, max_length,
+             stream, require_digits, require_uppercase, require_lowercase, require_special,
              min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
              remove_digits, normalize_whitespace, leet_speak, case_variation, output):
     """Generate passwords from corpus"""
@@ -242,9 +243,9 @@ def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min
             for name, corpus_stats in stats.items():
                 click.echo(f"  {name}: {corpus_stats['char_count']} chars, {corpus_stats['word_count']} words, weight={corpus_stats['weight']}")
             
-            # Get merged corpus
-            text = manager.get_merged_corpus()
-            click.echo(f"Merged corpus: {len(text)} chars")
+            # Merge the per-corpus models, each scaled to its weight's share
+            click.echo(f"Building {ngram_size}-gram model...")
+            model = manager.build_model(n=ngram_size, per_line=not stream)
         else:
             # Single corpus mode
             loader = CorpusLoader()
@@ -258,11 +259,11 @@ def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min
             
             stats = loader.get_corpus_stats()
             click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
-        
-        # Build n-gram model
-        click.echo(f"Building {ngram_size}-gram model...")
-        builder = NGramBuilder()
-        model = builder.build(text, n=ngram_size)
+
+            # Build n-gram model: one entry per line, unless --stream
+            click.echo(f"Building {ngram_size}-gram model...")
+            builder = NGramBuilder()
+            model = builder.build(text, n=ngram_size) if stream else builder.build_lines(text, n=ngram_size)
         click.echo(f"Model built with {len(model)} n-grams")
         
         # Set random seed if specified
@@ -287,49 +288,51 @@ def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min
                 transformer_chain.add(CaseVariationTransformer(mode=case_variation))
                 click.echo(f"Case variation enabled (mode: {case_variation})")
         
-        # Generate passwords
+        if min_length and max_length and min_length > max_length:
+            click.echo("Error: --min-length must not be larger than --max-length", err=True)
+            raise click.Abort()
+
+        # Filters run after transformations (leetspeak can add the digits a
+        # filter requires). Length is part of generation; the length filter
+        # only matters for stream-mode output, which ignores min/max.
+        filter_chain = FilterChain()
+        if (min_length or max_length) and length is None:
+            filter_chain.add_filter(LengthFilter(min_length or 0, max_length or 1000))
+        if require_digits or require_uppercase or require_lowercase or require_special:
+            filter_chain.add_filter(CharacterFilter(
+                require_digits=require_digits,
+                require_uppercase=require_uppercase,
+                require_lowercase=require_lowercase,
+                require_special=require_special
+            ))
+        entropy_calc = None
         if min_entropy:
-            click.echo(f"Generating {count} passwords with min entropy {min_entropy}...")
-            results = generator.generate_with_entropy(count, min_entropy)
-            passwords = [pwd for pwd, _ in results]
-            # Apply transformers to entropy-based passwords
+            from markov_passgen.core.entropy_calculator import EntropyCalculator
+            entropy_calc = EntropyCalculator()
+
+        # Generate in batches until enough candidates pass every filter
+        click.echo(f"Generating {count} passwords...")
+        passwords = []
+        batch = max(count, 100)
+        max_batches = 50
+        for _ in range(max_batches):
+            candidates = generator.generate(batch, length, seed=seed_word,
+                                            min_length=min_length, max_length=max_length)
+            if entropy_calc is not None:
+                candidates = [c for c in candidates
+                              if entropy_calc.calculate_markov_entropy(c, model) >= min_entropy]
             if transformer_chain:
-                passwords = transformer_chain.transform_batch(passwords)
-        else:
-            click.echo(f"Generating {count} passwords of length {length}...")
-            # Generate more than needed if we have filters
-            multiplier = 10 if (min_length or max_length or require_digits or 
-                               require_uppercase or require_lowercase or require_special) else 1
-            passwords = generator.generate(count * multiplier, length, seed=seed_word, transformer=transformer_chain)
-        
-        # Apply filters
-        if min_length or max_length or require_digits or require_uppercase or require_lowercase or require_special:
-            click.echo("Applying filters...")
-            filter_chain = FilterChain()
-            
-            # Length filter
-            if min_length or max_length:
-                min_len = min_length or 0
-                max_len = max_length or 1000
-                filter_chain.add_filter(LengthFilter(min_len, max_len))
-            
-            # Character filter
-            if require_digits or require_uppercase or require_lowercase or require_special:
-                filter_chain.add_filter(CharacterFilter(
-                    require_digits=require_digits,
-                    require_uppercase=require_uppercase,
-                    require_lowercase=require_lowercase,
-                    require_special=require_special
-                ))
-            
-            passwords = filter_chain.apply(passwords)
-            click.echo(f"After filtering: {len(passwords)} passwords")
-            
-            # Ensure we have enough
-            if len(passwords) < count:
-                click.echo(f"Warning: Only {len(passwords)} passwords meet filter criteria", err=True)
-            
-            passwords = passwords[:count]
+                candidates = transformer_chain.transform_batch(candidates)
+            if len(filter_chain):
+                candidates = filter_chain.apply(candidates)
+            passwords.extend(candidates)
+            if len(passwords) >= count:
+                break
+        passwords = passwords[:count]
+
+        if len(passwords) < count:
+            click.echo(f"Warning: Only {len(passwords)} passwords meet the criteria "
+                       f"after {max_batches * batch} attempts", err=True)
         
         # Write to output file
         with open(output, 'w', encoding='utf-8') as f:

@@ -78,9 +78,56 @@ class MultiCorpusManager:
         del self._corpora[name]
         del self._weights[name]
     
+    def build_model(self, n: int = 2, per_line: bool = True) -> Dict[str, Dict[str, float]]:
+        """Build one n-gram model from all corpora, weighted by share
+
+        Each corpus is modelled on its own, then its counts are scaled so
+        that it makes up its weight's share of the merged model: weights
+        0.5/0.3/0.2 mean half, 30% and 20% of all transitions, whatever the
+        corpora's sizes. Exact for any weights, and no text is copied.
+
+        Args:
+            n: N-gram size (2-5)
+            per_line: Treat each line as one entry (NGramBuilder.build_lines);
+                False reads each corpus as one stream (NGramBuilder.build)
+
+        Returns:
+            Merged n-gram model (counts are floats)
+
+        Raises:
+            ValueError: If no corpora have been added
+        """
+        from markov_passgen.core.ngram_builder import NGramBuilder
+
+        if not self._corpora:
+            raise ValueError("No corpora have been added")
+
+        builder = NGramBuilder()
+        models = {
+            name: (builder.build_lines(text, n) if per_line else builder.build(text, n))
+            for name, text in self._corpora.items()
+        }
+        totals = {name: sum(sum(f.values()) for f in model.values()) for name, model in models.items()}
+        total_weight = sum(self._weights.values())
+        # Keep magnitudes count-like: the merged model has as many transitions in total as its parts
+        scale_base = sum(totals.values())
+
+        merged: Dict[str, Dict[str, float]] = {}
+        for name, model in models.items():
+            factor = (self._weights[name] / total_weight) * scale_base / totals[name]
+            for prefix, followers in model.items():
+                target = merged.setdefault(prefix, {})
+                for char, count in followers.items():
+                    target[char] = target.get(char, 0.0) + count * factor
+        return merged
+
     def get_merged_corpus(self) -> str:
         """Get merged corpus with weights applied
-        
+
+        Kept for compatibility; build_model weights exactly and is what the
+        CLI uses. Here weights are approximated by repeating each corpus
+        max(1, int(share * 10)) times.
+
         Returns:
             Merged corpus text with weights applied by repetition
             

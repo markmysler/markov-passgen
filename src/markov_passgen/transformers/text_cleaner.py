@@ -114,16 +114,20 @@ class TextCleaner(BaseTextCleaner):
         return ''.join(char for char in text if not char.isdigit())
     
     def _normalize_whitespace(self, text: str) -> str:
-        """Normalize whitespace (multiple spaces to single space)
-        
+        """Normalize whitespace within each line
+
+        Runs of spaces and tabs become one space and each line is trimmed;
+        blank lines are dropped. Line breaks are kept, because a wordlist's
+        entries are its lines.
+
         Args:
             text: Input text
-            
+
         Returns:
             Text with normalized whitespace
         """
-        # Replace multiple whitespace with single space
-        return re.sub(r'\s+', ' ', text)
+        lines = (re.sub(r'[^\S\r\n]+', ' ', line).strip() for line in text.splitlines())
+        return '\n'.join(line for line in lines if line)
     
     @staticmethod
     def lowercase_only(text: str) -> str:

@@ -210,11 +210,11 @@ class TestTextCleanerEdgeCases:
     """Test edge cases for text cleaning"""
     
     def test_whitespace_normalization_with_tabs_newlines(self):
-        """Test: Normalize tabs and newlines to spaces"""
+        """Test: Tabs collapse to a space; line breaks (wordlist entries) are kept"""
         cleaner = TextCleaner(normalize_whitespace=True)
-        text = "Hello\t\tWorld\n\nTest"
+        text = "Hello\t\tWorld\n\n  Test  \n"
         result = cleaner.clean(text)
-        assert result == "Hello World Test"
+        assert result == "Hello World\nTest"
     
     def test_unicode_text(self):
         """Test: Handle Unicode text"""

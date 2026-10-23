@@ -3,19 +3,74 @@
 from typing import Dict
 import json
 
+# Markers for line-mode models (see NGramBuilder.build_lines). Control
+# characters that never occur in a text corpus; they're stripped from input.
+START = "\x02"
+END = "\x03"
+
+
+def is_line_model(model: Dict[str, Dict[str, float]]) -> bool:
+    """True if the model was built per line, with start and end markers."""
+    return any(key.startswith(START) for key in model)
+
 
 class NGramBuilder:
     """Build n-gram frequency dictionary from corpus
-    
+
     Single Responsibility: Build n-gram model
     """
-    
+
     def __init__(self):
         self._model: Dict[str, Dict[str, int]] = {}
-    
+
+    def build_lines(self, text: str, n: int = 2) -> Dict[str, Dict[str, int]]:
+        """Create an n-gram model with one training example per line
+
+        Use this for wordlists and password lists (one entry per line).
+        Each line is padded as START*n + line + END, so the model learns how
+        entries begin and end, and never learns a transition from the end of
+        one entry to the start of the next. A generator using the model
+        stops at END, so candidate lengths follow the data.
+
+        Args:
+            text: Corpus text; each non-blank line is one entry
+            n: N-gram size (2-5)
+
+        Returns:
+            N-gram frequency dictionary, including keys that start with START
+
+        Raises:
+            ValueError: If n is out of range or there are no non-blank lines
+        """
+        if n < 2 or n > 5:
+            raise ValueError("n must be between 2 and 5")
+
+        lines = [line.replace(START, "").replace(END, "").strip() for line in text.splitlines()]
+        lines = [line for line in lines if line]
+        if not lines:
+            raise ValueError("Text corpus has no non-blank lines")
+
+        model: Dict[str, Dict[str, int]] = {}
+        for line in lines:
+            self._count_line(model, line, n)
+
+        self._model = model
+        return model
+
+    @staticmethod
+    def _count_line(model: Dict[str, Dict[str, int]], line: str, n: int) -> None:
+        padded = START * n + line + END
+        for i in range(len(padded) - n):
+            followers = model.setdefault(padded[i:i + n], {})
+            next_char = padded[i + n]
+            followers[next_char] = followers.get(next_char, 0) + 1
+
     def build(self, text: str, n: int = 2) -> Dict[str, Dict[str, int]]:
-        """Create n-gram model
-        
+        """Create n-gram model from text read as one continuous stream
+
+        Transitions are learned across line breaks too. For wordlists and
+        password lists (one entry per line) use build_lines instead.
+
         Args:
             text: Input text corpus
             n: N-gram size (default: 2 for bigrams, range: 2-5)
@@ -87,7 +142,15 @@ class NGramBuilder:
             raise ValueError("Model not initialized. Call build() first.")
         
         n = len(next(iter(self._model.keys())))
-        
+
+        # A line-mode model is extended line by line, with the same markers
+        if is_line_model(self._model):
+            for line in text.splitlines():
+                line = line.replace(START, "").replace(END, "").strip()
+                if line:
+                    self._count_line(self._model, line, n)
+            return
+
         # Build new model and merge
         for i in range(len(text) - n):
             prefix = text[i:i + n]
