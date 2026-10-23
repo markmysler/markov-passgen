@@ -171,7 +171,10 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
 @click.option('--require-uppercase', is_flag=True, help='Require at least one uppercase letter')
 @click.option('--require-lowercase', is_flag=True, help='Require at least one lowercase letter')
 @click.option('--require-special', is_flag=True, help='Require at least one special character')
-@click.option('--min-entropy', type=float, help='Minimum entropy threshold')
+@click.option('--min-markov-bits', type=float,
+              help='Keep candidates the model finds at least this surprising: total bits, -log2 P(candidate)')
+@click.option('--min-entropy', type=float,
+              help='Keep candidates whose average bits per character under the model is at least this (typically 1-4)')
 @click.option('--seed-word', type=str, help='Seed word to start generation')
 @click.option('--random-seed', type=int, help='Random seed for deterministic generation')
 @click.option('--lowercase', is_flag=True, help='Convert corpus to lowercase')
@@ -183,7 +186,7 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
 @click.option('--output', default='wordlist.txt', help='Output file')
 def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min_length, max_length,
              stream, require_digits, require_uppercase, require_lowercase, require_special,
-             min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
+             min_markov_bits, min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
              remove_digits, normalize_whitespace, leet_speak, case_variation, output):
     """Generate passwords from corpus"""
     try:
@@ -306,7 +309,7 @@ def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min
                 require_special=require_special
             ))
         entropy_calc = None
-        if min_entropy:
+        if min_entropy or min_markov_bits:
             from markov_passgen.core.entropy_calculator import EntropyCalculator
             entropy_calc = EntropyCalculator()
 
@@ -318,9 +321,12 @@ def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min
         for _ in range(max_batches):
             candidates = generator.generate(batch, length, seed=seed_word,
                                             min_length=min_length, max_length=max_length)
-            if entropy_calc is not None:
+            if entropy_calc is not None and min_entropy:
                 candidates = [c for c in candidates
                               if entropy_calc.calculate_markov_entropy(c, model) >= min_entropy]
+            if entropy_calc is not None and min_markov_bits:
+                candidates = [c for c in candidates
+                              if entropy_calc.calculate_markov_bits(c, model) >= min_markov_bits]
             if transformer_chain:
                 candidates = transformer_chain.transform_batch(candidates)
             if len(filter_chain):

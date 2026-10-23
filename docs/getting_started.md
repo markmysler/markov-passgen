@@ -1,346 +1,177 @@
 # Tutorial: Getting Started with Markov PassGen
 
-This tutorial will walk you through the basic features of Markov PassGen, from simple password generation to advanced multi-corpus analysis.
-
-## Table of Contents
+This tutorial walks through the main features, from a first wordlist to combining several corpora. Every example runs as written from the repository root; the outputs shown come from real runs with the seeds given.
 
 1. [Installation](#installation)
-2. [Basic Password Generation](#basic-password-generation)
-3. [Understanding N-Grams](#understanding-n-grams)
-4. [Applying Filters](#applying-filters)
-5. [Using Transformations](#using-transformations)
-6. [Multi-Corpus Generation](#multi-corpus-generation)
-7. [Visualization and Analysis](#visualization-and-analysis)
+2. [Basic generation](#basic-generation)
+3. [Choosing the n-gram size](#choosing-the-n-gram-size)
+4. [Length](#length)
+5. [Filters](#filters)
+6. [Transformations](#transformations)
+7. [Several corpora](#several-corpora)
+8. [Scoring candidates](#scoring-candidates)
+9. [Visualisation](#visualisation)
 
 ## Installation
 
-First, install Markov PassGen:
-
 ```bash
-pip install markov-passgen
+pip install "markov-passgen[viz]"   # [viz] adds the plotting commands
 ```
 
-Or install from source for development:
+Or from source:
 
 ```bash
-git clone https://github.com/yourusername/markov-passgen.git
+git clone https://github.com/markmysler/markov-passgen.git
 cd markov-passgen
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-## Basic Password Generation
+## Basic generation
 
-### Using the CLI
-
-The simplest way to generate passwords is using the command-line interface:
+### CLI
 
 ```bash
-markov-passgen generate --corpus examples/common_passwords.txt --count 10
+markov-passgen generate --corpus examples/common_passwords.txt --count 10 --output candidates.txt
 ```
 
-This will generate 10 passwords based on patterns learned from the corpus file.
-
-### Using the Python API
-
-For more control, use the Python API:
+### Python
 
 ```python
 from markov_passgen.core import CorpusLoader, NGramBuilder, PasswordGenerator
 
-# Step 1: Load your corpus
-loader = CorpusLoader("examples/common_passwords.txt")
-text = loader.load()
+text = CorpusLoader().load_from_file("examples/common_passwords.txt")
+model = NGramBuilder().build_lines(text, n=3)   # each line is one entry
 
-# Step 2: Build the Markov model
-builder = NGramBuilder(ngram_size=3)
-model = builder.build_model(text)
-
-# Step 3: Generate passwords
-generator = PasswordGenerator(model, min_length=8, max_length=16)
-passwords = generator.generate(count=10)
-
-# Step 4: Display results
-for password in passwords:
-    print(password)
+generator = PasswordGenerator(model)
+generator.set_random_seed(42)
+print(generator.generate(count=8))
 ```
 
-**Output:**
-```
-passw0rd
-letmein123
-dragonfly
-iloveyou1
-master123
-sunshine99
-ashley2023
-welcome!
-football77
-rainbowcat
+```text
+['sunshine', 'password1', 'princess', 'cheese', 'iloveyou', 'password1', 'stang', 'zxcvbnm']
 ```
 
-## Understanding N-Grams
+The example list has only about 50 entries, so a 3-gram model mostly walks back along entries it has seen. Bigger corpora give more new combinations.
 
-N-grams are sequences of N consecutive characters. The n-gram size determines how much context the model uses:
+## Choosing the n-gram size
 
-- **n=2 (bigrams)**: Less realistic, more random
-- **n=3 (trigrams)**: Good balance (default)
-- **n=4 (4-grams)**: More realistic patterns
-- **n=5 (5-grams)**: Very close to source text
-
-### Example: Different N-Gram Sizes
+The model predicts each character from the previous *n* characters. Small *n* gives more variety and less realism; large *n* sticks closer to the corpus.
 
 ```python
 from markov_passgen.core import CorpusLoader, NGramBuilder, PasswordGenerator
 
-loader = CorpusLoader("examples/english_words.txt")
-text = loader.load()
-
-# Compare different n-gram sizes
+words = CorpusLoader().load_from_file("examples/english_words.txt")
 for n in [2, 3, 4, 5]:
-    print(f"\n=== N-Gram Size: {n} ===")
-    builder = NGramBuilder(ngram_size=n)
-    model = builder.build_model(text)
-    generator = PasswordGenerator(model, min_length=10, max_length=12)
-    passwords = generator.generate(count=3)
-    for pwd in passwords:
-        print(pwd)
+    generator = PasswordGenerator(NGramBuilder().build_lines(words, n=n))
+    generator.set_random_seed(42)
+    print(n, generator.generate(count=4, min_length=8, max_length=12))
 ```
 
-**Output:**
-```
-=== N-Gram Size: 2 ===
-relpingarl
-thndbywate
-morystalid
-
-=== N-Gram Size: 3 ===
-government
-educational
-restaurant
-
-=== N-Gram Size: 4 ===
-relationship
-understanding
-characteristic
-
-=== N-Gram Size: 5 ===
-international
-responsibility
-revolutionary
+```text
+2 ['sancyessing', 'chourimaring', 'weraintabore', 'tougenter']
+3 ['saladerly', 'leaguest', 'atterror', 'tournetwo']
+4 ['salaryle', 'challeyboard', 'sharenture', 'runningly']
+5 ['salaryle', 'challenge', 'attention', 'stretchen']
 ```
 
-## Applying Filters
+At *n* = 5 some candidates are simply words from the list.
 
-Filters ensure generated passwords meet specific requirements.
+## Length
 
-### Length Filters
+A model built with `build_lines` knows where entries end, so candidate lengths follow the corpus. You can bound them, or ask for an exact length:
 
 ```python
-from markov_passgen.filters import LengthFilter
-
-# Create a length filter
-length_filter = LengthFilter(min_length=12, max_length=20)
-
-# Use with generator
-generator = PasswordGenerator(model, min_length=12, max_length=20)
-passwords = generator.generate_filtered(count=10, filter_chain=length_filter)
+generator.generate(count=10, min_length=8, max_length=12)   # between 8 and 12
+generator.generate(count=10, length=10)                     # exactly 10
 ```
 
-### Character Set Filters
+CLI: `--min-length`, `--max-length`, `--length`.
+
+`NGramBuilder().build(text, n)` instead reads the text as one continuous stream, which suits prose. Such a model has no entry ends, so every candidate has the requested length (12 by default). CLI: `--stream`.
+
+## Filters
+
+Filters keep the candidates that meet requirements:
 
 ```python
-from markov_passgen.filters import CharacterSetFilter
+from markov_passgen.filters import CharacterFilter, FilterChain, LengthFilter
 
-# Require specific character types
-char_filter = CharacterSetFilter(
-    require_digit=True,
-    require_uppercase=True,
-    require_lowercase=True,
-    require_special=True
+chain = FilterChain()
+chain.add_filter(LengthFilter(min_length=8, max_length=16))
+chain.add_filter(CharacterFilter(require_digits=True))
+
+kept = chain.apply(generator.generate(count=500))
+```
+
+`CharacterFilter` also takes `require_uppercase`, `require_lowercase`, `require_special`, `must_include` and `must_not_include`.
+
+On the command line, filters run on each batch and the CLI keeps generating until it has `--count` candidates that pass:
+
+```bash
+markov-passgen generate \
+    --corpus examples/common_passwords.txt \
+    --count 50 \
+    --min-length 8 \
+    --require-digits \
+    --output with_digits.txt
+```
+
+## Transformations
+
+```python
+import random
+from markov_passgen.transformers import (
+    CaseVariationTransformer,
+    LeetSpeakTransformer,
+    SubstitutionTransformer,
+    TransformerChain,
 )
 
-passwords = generator.generate_filtered(count=10, filter_chain=char_filter)
+random.seed(42)
+leet = LeetSpeakTransformer(intensity=0.5)
+print([leet.transform(p) for p in ["password", "admin", "welcome"]])
+
+alternating = CaseVariationTransformer(mode="alternating")
+print([alternating.transform(p) for p in ["password", "admin", "welcome"]])
+
+dollars = SubstitutionTransformer({"s": "$"})
+print(dollars.transform("bass"))
+
+chain = TransformerChain()
+chain.add(LeetSpeakTransformer(intensity=0.3)).add(CaseVariationTransformer(mode="capitalize"))
+print(chain.transform("welcome"))
 ```
 
-### Entropy Filters
-
-```python
-from markov_passgen.filters import EntropyFilter
-from markov_passgen.core import EntropyCalculator
-
-# Require minimum entropy
-entropy_calc = EntropyCalculator()
-entropy_filter = EntropyFilter(min_entropy=50.0, entropy_calculator=entropy_calc)
-
-passwords = generator.generate_filtered(count=10, filter_chain=entropy_filter)
+```text
+['pa55w0rd', 'admin', 'welc0m3']
+['PaSsWoRd', 'AdMiN', 'WeLcOmE']
+ba$$
 ```
 
-### Combining Filters
+(The last line is random.) `CaseVariationTransformer` modes are `random`, `alternating` and `capitalize`.
 
-```python
-from markov_passgen.filters import FilterChain
+CLI: `--leet-speak 0.3` (intensity 0 to 1) and `--case-variation alternating`.
 
-# Chain multiple filters
-filters = FilterChain([
-    LengthFilter(min_length=12, max_length=20),
-    CharacterSetFilter(require_digit=True, require_special=True),
-    EntropyFilter(min_entropy=50.0, entropy_calculator=entropy_calc)
-])
-
-passwords = generator.generate_filtered(count=10, filter_chain=filters)
-```
-
-### CLI Filters
-
-Apply filters using the command-line:
-
-```bash
-markov-passgen generate \
-    --corpus examples/english_words.txt \
-    --count 50 \
-    --min-length 12 \
-    --max-length 16 \
-    --require-digit \
-    --require-special \
-    --min-entropy 50 \
-    --output secure_passwords.txt
-```
-
-## Using Transformations
-
-Transformations modify generated passwords to add variety and complexity.
-
-### Leetspeak Transformation
-
-```python
-from markov_passgen.transformers import LeetSpeakTransformer
-
-leet = LeetSpeakTransformer(probability=0.5)
-
-passwords = ["password", "admin", "welcome"]
-for pwd in passwords:
-    transformed = leet.transform(pwd)
-    print(f"{pwd} -> {transformed}")
-```
-
-**Output:**
-```
-password -> p@ssw0rd
-admin -> @dm1n
-welcome -> w3lc0m3
-```
-
-### Case Variation
-
-```python
-from markov_passgen.transformers import CaseVariationTransformer
-
-case_var = CaseVariationTransformer(variation_type="alternating")
-
-passwords = ["password", "admin", "welcome"]
-for pwd in passwords:
-    transformed = case_var.transform(pwd)
-    print(f"{pwd} -> {transformed}")
-```
-
-**Output:**
-```
-password -> PaSsWoRd
-admin -> AdMiN
-welcome -> WeLcOmE
-```
-
-### Custom Substitutions
-
-```python
-from markov_passgen.transformers import SubstitutionTransformer
-
-sub = SubstitutionTransformer()
-sub.add_rule("a", ["@", "4"])
-sub.add_rule("o", ["0"])
-sub.add_rule("e", ["3"])
-sub.add_rule("i", ["1", "!"])
-
-password = "password"
-transformed = sub.transform(password)
-print(f"{password} -> {transformed}")
-```
-
-**Output:**
-```
-password -> p@ssw0rd
-```
-
-### Transformation Chains
-
-```python
-from markov_passgen.transformers import TransformerChain
-
-# Combine multiple transformers
-chain = TransformerChain([
-    LeetSpeakTransformer(probability=0.3),
-    CaseVariationTransformer(variation_type="random"),
-    SubstitutionTransformer()
-])
-
-password = "welcome"
-transformed = chain.transform(password)
-print(f"{password} -> {transformed}")
-```
-
-### CLI Transformations
-
-```bash
-markov-passgen generate \
-    --corpus examples/english_words.txt \
-    --count 20 \
-    --transform leetspeak \
-    --output transformed.txt
-```
-
-## Multi-Corpus Generation
-
-Combine multiple text sources for more diverse passwords.
-
-### Python API
+## Several corpora
 
 ```python
 from markov_passgen.core import MultiCorpusManager, PasswordGenerator
 
-# Create manager
-manager = MultiCorpusManager(ngram_size=3)
+manager = MultiCorpusManager()
+manager.add_corpus("passwords", "examples/common_passwords.txt", weight=0.5)
+manager.add_corpus("words", "examples/english_words.txt", weight=0.3)
+manager.add_corpus("users", "examples/usernames.txt", weight=0.2)
 
-# Add corpora with weights
-manager.add_corpus("examples/common_passwords.txt", weight=0.5)
-manager.add_corpus("examples/english_words.txt", weight=0.3)
-manager.add_corpus("examples/usernames.txt", weight=0.2)
+model = manager.build_model(n=3)
+candidates = PasswordGenerator(model).generate(count=20)
 
-# Build merged model
-merged_model = manager.build_merged_model()
-
-# Generate passwords
-generator = PasswordGenerator(merged_model, min_length=10, max_length=16)
-passwords = generator.generate(count=20)
-
-for pwd in passwords:
-    print(pwd)
+for name, stats in manager.get_corpus_stats().items():
+    print(f"{name}: {stats['char_count']} chars, {stats['word_count']} words, weight {stats['weight']}")
 ```
 
-### Corpus Statistics
+A weight is the corpus's share of the merged model, whatever its size: the 50-line password list gets half the model even though the word list is about 30 times larger.
 
-```python
-# Get statistics about each corpus
-stats = manager.get_corpus_stats()
-
-for stat in stats:
-    print(f"\nCorpus: {stat['name']}")
-    print(f"  Characters: {stat['char_count']}")
-    print(f"  Words: {stat['word_count']}")
-    print(f"  Unique characters: {stat['unique_chars']}")
-    print(f"  Weight: {stat['weight']}")
-```
-
-### CLI Multi-Corpus
+CLI:
 
 ```bash
 markov-passgen generate \
@@ -349,149 +180,66 @@ markov-passgen generate \
     --corpus-list examples/usernames.txt \
     --corpus-weights "0.5,0.3,0.2" \
     --count 50 \
-    --min-length 12 \
-    --output multi_corpus_passwords.txt
+    --output mixed.txt
 ```
 
-## Visualization and Analysis
+## Scoring candidates
 
-Visualize password characteristics and corpus properties.
+`EntropyCalculator` offers three different numbers:
 
-### N-Gram Frequency Analysis
-
-```python
-from markov_passgen.visualization import NGramVisualizer
-from markov_passgen.core import CorpusLoader, NGramBuilder
-
-# Load and build model
-loader = CorpusLoader("examples/common_passwords.txt")
-text = loader.load()
-builder = NGramBuilder(ngram_size=3)
-model = builder.build_model(text)
-
-# Create visualizer
-viz = NGramVisualizer()
-
-# Plot top 20 n-grams
-viz.plot_ngram_frequencies(
-    model,
-    top_n=20,
-    output_path="ngram_frequencies.png"
-)
-```
-
-### Entropy Distribution
+| Method | Meaning |
+|---|---|
+| `calculate_markov_bits(p, model)` | Total bits, -log2 of the candidate's probability under the model. How surprising the candidate is to the model: higher is less predictable. |
+| `calculate_markov_entropy(p, model)` | The same per character (average bits per transition), typically 1 to 4. |
+| `calculate_shannon_entropy(p)` | How evenly the string uses its own characters, bounded by log2(length). It doesn't measure guessability. |
 
 ```python
 from markov_passgen.core import EntropyCalculator
 
-# Generate passwords
-generator = PasswordGenerator(model, min_length=8, max_length=16)
-passwords = generator.generate(count=200)
-
-# Calculate and visualize entropy
-entropy_calc = EntropyCalculator()
-viz.plot_entropy_distribution(
-    passwords,
-    entropy_calc,
-    bins=30,
-    output_path="entropy_distribution.png"
-)
+calc = EntropyCalculator()
+for candidate in candidates[:5]:
+    print(candidate, round(calc.calculate_markov_bits(candidate, model), 1))
 ```
 
-### Length Distribution
+Typical values depend on the corpus. With 3-grams, candidates from the small password list mostly score 5 to 7 bits, and candidates from the word list mostly 10 to 20. On the command line, `--min-markov-bits 15` keeps only the more surprising ones:
+
+```bash
+markov-passgen generate --corpus examples/english_words.txt --ngram-size 3 --min-markov-bits 15 --count 20 --output unusual.txt
+```
+
+## Visualisation
+
+Needs the `[viz]` extra.
 
 ```python
-# Visualize password lengths
-viz.plot_length_distribution(
-    passwords,
-    bins=20,
-    output_path="length_distribution.png"
-)
+from markov_passgen.core import EntropyCalculator
+from markov_passgen.visualization import NGramVisualizer
+
+viz = NGramVisualizer()
+viz.plot_ngram_frequencies(model, top_n=20, output_path="ngram_frequencies.png")
+viz.plot_length_distribution(candidates, bins=20, output_path="length_distribution.png")
+viz.plot_entropy_distribution(candidates, EntropyCalculator(), bins=30, output_path="entropy_distribution.png")
+viz.plot_character_distribution(words, top_n=30, output_path="character_frequencies.png")
+viz.plot_corpus_comparison(manager.get_corpus_stats(), output_path="corpus_comparison.png")
+NGramVisualizer.close_all()
 ```
 
-### Character Frequency
+CLI:
 
-```python
-# Analyze character usage
-viz.plot_character_distribution(
-    text,
-    top_n=30,
-    output_path="character_frequencies.png"
-)
-```
-
-### Corpus Comparison
-
-```python
-# Compare multiple corpora
-from markov_passgen.core import MultiCorpusManager
-
-manager = MultiCorpusManager(ngram_size=3)
-manager.add_corpus("examples/common_passwords.txt", weight=0.5)
-manager.add_corpus("examples/english_words.txt", weight=0.3)
-manager.add_corpus("examples/usernames.txt", weight=0.2)
-
-stats = manager.get_corpus_stats()
-
-viz.plot_corpus_comparison(
-    stats,
-    output_path="corpus_comparison.png"
-)
-```
-
-### CLI Visualization
-
-Visualize corpus:
 ```bash
-markov-passgen visualize-corpus \
-    --corpus examples/common_passwords.txt \
-    --ngram-freq ngram_analysis.png \
-    --char-dist char_analysis.png \
-    --top-n 20
+markov-passgen visualize-corpus --corpus examples/common_passwords.txt --ngram-freq ngrams.png --char-dist chars.png --top-n 20
+markov-passgen visualize-passwords --wordlist mixed.txt --entropy-dist entropy.png --length-dist length.png --bins 30
+markov-passgen visualize-multi-corpus --corpus-list examples/common_passwords.txt --corpus-list examples/english_words.txt --output comparison.png
 ```
-
-Visualize passwords:
-```bash
-markov-passgen visualize-passwords \
-    --wordlist generated_passwords.txt \
-    --entropy-dist entropy.png \
-    --length-dist length.png \
-    --bins 30
-```
-
-Compare corpora:
-```bash
-markov-passgen visualize-multi-corpus \
-    --corpus-list examples/common_passwords.txt \
-    --corpus-list examples/english_words.txt \
-    --corpus-list examples/usernames.txt \
-    --corpus-weights "0.5,0.3,0.2" \
-    --output comparison.png
-```
-
-## Next Steps
-
-- Explore [Advanced Techniques](advanced.md) for complex use cases
-- Read the [API Reference](../api/) for detailed documentation
-- Check out [Architecture Overview](architecture.md) to understand the design
-- See [Contributing Guidelines](../../CONTRIBUTING.md) to contribute
 
 ## Tips
 
-1. **Start with n=3**: Trigrams offer the best balance between randomness and realism
-2. **Use multiple corpora**: Mixing sources creates more diverse passwords
-3. **Apply filters carefully**: Too many filters can slow generation
-4. **Visualize first**: Analyze your corpus before generating large batches
-5. **Test incrementally**: Start with small counts, then scale up
+- **Start with *n* = 3.** It balances novelty and realism; *n* = 5 often reproduces corpus entries.
+- **Use bigger corpora** for more varied output; the bundled examples are tiny.
+- **Strict filters cost attempts.** The CLI gives up after 50 batches and says how many candidates it found.
 
-## Common Pitfalls
+## Responsible use
 
-- **Small corpora**: Need at least 100+ words for reasonable results
-- **Too high n-gram**: n=5 often just reproduces source text
-- **Over-filtering**: Strict filters may cause slow generation
-- **Ignoring entropy**: Low entropy passwords are weak
+Generated candidates are for research, teaching and authorized testing. Don't use them as real passwords: they're predictable by design.
 
-## Security Note
-
-Remember: Generated passwords are for **research and testing only**. Never use them for real systems or accounts.
+See also [Architecture](architecture.md).

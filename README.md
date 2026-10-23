@@ -144,7 +144,7 @@ from markov_passgen.transformers import (
 )
 
 leet = LeetSpeakTransformer(intensity=0.5)
-print(leet.transform("password"))                          # e.g. p@ssw0rd
+print(leet.transform("password"))                          # e.g. p455w0rd
 
 alternating = CaseVariationTransformer(mode="alternating")
 print(alternating.transform("password"))                   # PaSsWoRd
@@ -176,15 +176,22 @@ for name, stats in manager.get_corpus_stats().items():
 
 A weight is the corpus's share of the merged model: here half of all transitions come from the password list, even though the word list is 30 times larger.
 
-### Entropy
+### Scoring candidates
 
 ```python
 from markov_passgen.core import EntropyCalculator
 
 calc = EntropyCalculator()
-calc.calculate_shannon_entropy("password1")       # bits per character, from the string's own letters
-calc.calculate_markov_entropy("password1", model) # average bits per character under the model
+calc.calculate_markov_bits("password1", model)     # total bits: -log2 P(candidate) under the model
+calc.calculate_markov_entropy("password1", model)  # the same per character (typically 1-4)
+calc.calculate_shannon_entropy("password1")        # spread of the string's own letters
 ```
+
+- **Markov bits** is the useful one: how surprising the whole candidate is to the model. Higher means less predictable. Typical values depend on the corpus; with 3-grams, candidates from the bundled word list mostly score 10–20 bits.
+- **Markov entropy** is that score divided by the number of characters.
+- **Shannon entropy** only measures how evenly a string uses its own characters. It's bounded by log2(length) (about 3.6 for 12 characters) and doesn't measure guessability.
+
+None of these is the "bits of entropy" used for password strength, so a value like 40 isn't reachable for `--min-entropy`.
 
 ### Visualisation
 
@@ -220,7 +227,8 @@ Run `markov-passgen <command> --help` for the full list.
 | `--length N` | Exact length for every candidate |
 | `--stream` | Read the corpus as one continuous text instead of one entry per line (for prose); candidates are then 12 characters unless `--length` is set |
 | `--require-digits`, `--require-uppercase`, `--require-lowercase`, `--require-special` | Keep only candidates containing that character class |
-| `--min-entropy X` | Keep only candidates whose Markov score (average bits per character) is at least X |
+| `--min-markov-bits X` | Keep only candidates whose total Markov bits (see *Scoring candidates*) is at least X |
+| `--min-entropy X` | Keep only candidates whose Markov entropy (average bits per character, typically 1–4) is at least X |
 | `--seed-word TEXT` | Start every candidate with this text |
 | `--random-seed N` | Seed for reproducible output |
 | `--lowercase`, `--remove-punctuation`, `--remove-digits`, `--normalize-whitespace` | Clean the corpus first |

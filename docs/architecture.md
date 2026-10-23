@@ -1,390 +1,129 @@
 # Markov PassGen Architecture
 
-This document provides an overview of the system architecture, design principles, and component interactions.
+How the pieces fit together. For usage, see the [tutorial](getting_started.md).
 
-## Design Principles
-
-### 1. Single Responsibility Principle (SRP)
-Each class has one clear purpose:
-- `CorpusLoader`: Reads text files
-- `NGramBuilder`: Builds Markov models
-- `PasswordGenerator`: Generates passwords
-- `EntropyCalculator`: Calculates entropy
-
-### 2. Open/Closed Principle (OCP)
-Components are open for extension but closed for modification:
-- Filters implement `BaseFilter` interface
-- Transformers implement `PasswordTransformer` interface
-- New implementations can be added without changing existing code
-
-### 3. Dependency Inversion
-High-level modules depend on abstractions:
-- `PasswordGenerator` accepts any n-gram model
-- `FilterChain` works with any `BaseFilter` implementation
-- `TransformerChain` works with any transformer
-
-### 4. Composition Over Inheritance
-- Filter chains compose multiple filters
-- Transformer chains compose multiple transformers
-- Multi-corpus manager composes multiple corpus loaders
-
-## System Architecture
+## Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         CLI Layer                            │
-│  ┌─────────┐  ┌──────────┐  ┌──────────────┐               │
-│  │generate │  │visualize │  │multi-corpus  │               │
-│  │command  │  │commands  │  │commands      │               │
-│  └────┬────┘  └─────┬────┘  └──────┬───────┘               │
-└───────┼─────────────┼───────────────┼──────────────────────┘
-        │             │               │
-        ▼             ▼               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Core Components                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐   │
-│  │CorpusLoader  │  │ NGramBuilder │  │MultiCorpus      │   │
-│  │              │  │              │  │Manager          │   │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬────────┘   │
-│         │                 │                    │            │
-│         └─────────────────┼────────────────────┘            │
-│                           ▼                                 │
-│                  ┌────────────────┐                         │
-│                  │Password        │                         │
-│                  │Generator       │                         │
-│                  └───────┬────────┘                         │
-│                          │                                  │
-└──────────────────────────┼──────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-┌──────────────┐  ┌────────────────┐  ┌──────────────┐
-│Filters       │  │Transformers    │  │Analysis      │
-│              │  │                │  │              │
-│• Length      │  │• LeetSpeak     │  │• Entropy     │
-│• CharSet     │  │• CaseVariation │  │• Visualizer  │
-│• Entropy     │  │• Substitution  │  │              │
-│• FilterChain │  │• TransformChain│  │              │
-└──────────────┘  └────────────────┘  └──────────────┘
+                    CLI (click): generate, visualize-*
+                                  │
+          ┌───────────────────────┼────────────────────────┐
+          ▼                       ▼                        ▼
+    CorpusLoader            MultiCorpusManager       TextCleaner
+    (read, clean)           (several corpora,        (optional corpus
+          │                  weighted merge)          cleaning)
+          ▼                       │
+    NGramBuilder ◄────────────────┘
+    (build_lines / build)
+          │  model: {context: {next_char: count}}
+          ▼
+    PasswordGenerator ──► candidates ──► EntropyCalculator (scores)
+                                    ──► TransformerChain (leetspeak, case)
+                                    ──► FilterChain (length, character classes)
+                                    ──► NGramVisualizer (plots, [viz] extra)
 ```
 
-## Component Details
+Each class does one job, and the pieces meet at plain data: a model is a dict, and candidates are a list of strings.
 
-### Core Module (`src/markov_passgen/core/`)
+## Core (`markov_passgen.core`)
 
-#### CorpusLoader
-Responsible for reading text files and handling encoding.
+### CorpusLoader
 
-**Key Methods:**
-- `load()`: Read and return corpus text
-- `validate()`: Check file exists and is readable
+- `load_from_file(path, cleaner=None)` and `load_from_files(paths, cleaner=None)` read UTF-8 text and optionally clean it.
+- `validate_corpus(text)` checks for at least 100 characters.
+- `get_corpus_stats()` reports character, word and unique-character counts.
 
-**Dependencies:** None (pure I/O)
+### NGramBuilder
 
-#### NGramBuilder
-Builds n-gram frequency models from text.
+The model maps each *n*-character context to counts of the character that followed it:
 
-**Key Methods:**
-- `build_model(text)`: Create n-gram frequency dictionary
-- `_extract_ngrams(text)`: Extract n-grams with context
-
-**Data Structure:**
 ```python
 {
-    "pa": {"s": 10, "r": 5, "t": 3},  # "pa" followed by "s" 10 times
-    "as": {"s": 15, "h": 2},          # "as" followed by "s" 15 times
+    "pas": {"s": 10, "t": 3},   # "pas" was followed by "s" 10 times, "t" 3 times
     ...
 }
 ```
 
-#### PasswordGenerator
-Generates passwords using probabilistic selection.
+- `build_lines(text, n)` (used by the CLI) treats each line as one entry, padded with a start marker (`\x02` × *n*) and an end marker (`\x03`). The model learns how entries begin and end, and never learns a jump from one line into the next.
+- `build(text, n)` reads the text as one continuous stream, for prose. Such a model has no entry ends.
+- `add_to_model(text)` extends a model the same way it was built.
+- `save_model(path)` and `load_model(path)` write and read JSON.
 
-**Key Methods:**
-- `generate(count)`: Generate N passwords
-- `generate_filtered(count, filter_chain)`: Generate with filters
-- `_select_next_char(context)`: Weighted random selection
+### PasswordGenerator
 
-**Algorithm:**
-1. Start with random n-gram from model
-2. Look up possible next characters
-3. Select next char weighted by frequency
-4. Append and shift context window
-5. Repeat until length criteria met
+`generate(count, length=None, seed=None, transformer=None, min_length=None, max_length=None)`
 
-#### MultiCorpusManager
-Manages multiple corpora with weights.
+1. Start from the start context (line mode), or a random context (stream mode).
+2. Look up what followed the last *n* characters and pick the next character, weighted by the counts.
+3. In line mode, stop when the end marker is picked. It's never allowed before `min_length`, and generation stops at `max_length` (default 64). An exact `length` sets both. In stream mode, stop at `length` (default 12).
+4. If a context never occurred in the corpus, back off to the last *n*−1, *n*−2, … characters, down to plain character frequencies. These lower-order tables are summed from the model once, on first use.
 
-**Key Methods:**
-- `add_corpus(path, weight)`: Register corpus
-- `build_merged_model()`: Create weighted merged model
-- `get_corpus_stats()`: Get corpus statistics
+### MultiCorpusManager
 
-**Merging Algorithm:**
-```python
-merged_freq[ngram][next_char] = 
-    sum(corpus_freq[ngram][next_char] * corpus_weight)
-```
+Holds several corpora with weights. `build_model(n, per_line=True)` builds one model per corpus, then scales each so its total count equals its weight's share of the merged model. Weights mean shares regardless of corpus size, and nothing is copied. (`get_merged_corpus()` keeps the old repeat-the-text approximation for compatibility.)
 
-#### EntropyCalculator
-Calculates Shannon entropy for passwords.
+### EntropyCalculator
 
-**Formula:**
-```
-H(X) = -Σ p(x) * log₂(p(x))
-```
+| Method | Measures |
+|---|---|
+| `calculate_markov_bits(p, model)` | -log2 P(p) under the model, using the generator's back-off; includes the end marker in line mode. How surprising the whole candidate is. |
+| `calculate_markov_entropy(p, model)` | Average bits per transition. |
+| `calculate_shannon_entropy(p)` | Spread of the string's own characters; bounded by log2(length). |
+| `estimate_crack_time(p)` | Brute-force time over the candidate's character classes. Ignores that Markov candidates are far more guessable than that. |
 
-Where p(x) is the probability of each character.
+## Filters (`markov_passgen.filters`)
 
-### Filters Module (`src/markov_passgen/filters/`)
-
-All filters implement `BaseFilter` interface:
+Every filter takes a list and returns the candidates that pass:
 
 ```python
 class BaseFilter(ABC):
     @abstractmethod
-    def apply(self, password: str) -> bool:
-        pass
+    def filter(self, passwords: List[str]) -> List[str]: ...
 ```
 
-#### LengthFilter
-Checks password length bounds.
+- `LengthFilter(min_length, max_length)`
+- `CharacterFilter(require_digits, require_uppercase, require_lowercase, require_special, must_include, must_not_include)`
+- `FilterChain` applies its filters in order (`add_filter`, `apply`).
 
-#### CharacterSetFilter
-Validates presence of required character types:
-- Digits
-- Uppercase letters
-- Lowercase letters
-- Special characters
+The CLI runs filters on each batch of candidates and keeps generating until it has enough, for up to 50 batches.
 
-#### EntropyFilter
-Ensures minimum entropy threshold.
+## Transformers (`markov_passgen.transformers`)
 
-#### FilterChain
-Composes multiple filters (AND logic):
-```python
-def apply(self, password: str) -> bool:
-    return all(f.apply(password) for f in self.filters)
-```
+Corpus cleaning (text → text):
 
-### Transformers Module (`src/markov_passgen/transformers/`)
+- **TextCleaner**: lowercase, remove punctuation, remove digits, normalise whitespace. Normalising keeps line breaks, because entries are lines.
+- **CaseTransformer**: `lower`, `upper`, `title` or `capitalize`.
+- **CharacterTransformer**: keep or drop letters, digits, spaces and punctuation.
 
-#### Text Processing
+Candidate transformations (`BasePasswordTransformer.transform(password) -> str`):
 
-**TextCleaner**: Normalizes raw text
-- Remove punctuation
-- Remove digits
-- Remove whitespace
-- Convert case
+- **LeetSpeakTransformer(intensity)** replaces a→4, e→3, i→1, o→0, s→5, t→7, g→9 and b→8, each with probability `intensity`.
+- **CaseVariationTransformer(mode)** uses one of `random`, `alternating` or `capitalize`.
+- **SubstitutionTransformer(substitutions, probability)** applies a custom one-to-one map.
+- **TransformerChain** applies transformers in order.
 
-**CaseTransformer**: Applies case styles
-- lowercase
-- UPPERCASE
-- Title Case
-- camelCase
-- snake_case
-- PascalCase
+## Visualisation (`markov_passgen.visualization`)
 
-**CharacterTransformer**: Character-level substitutions
-- Custom mapping rules
-- Preserves unmapped characters
+`NGramVisualizer` draws n-gram frequencies, character frequencies, and the entropy and length distributions of a wordlist, plus a corpus comparison, with matplotlib and seaborn. These are the optional `[viz]` extra; without them, importing the module raises an error that says how to install it. The file extension picks the format (PNG, JPG, SVG or PDF).
 
-#### Password Transformers
+## CLI (`markov_passgen.cli`)
 
-**LeetSpeakTransformer**: Common character substitutions
-```python
-{
-    'a': '@', 'e': '3', 'i': '1', 'o': '0',
-    's': '$', 't': '7', 'l': '1'
-}
-```
+The commands are `generate`, `visualize-corpus`, `visualize-passwords` and `visualize-multi-corpus`. Errors are printed as one line and the command exits with a non-zero status.
 
-**CaseVariationTransformer**: Case patterns
-- Alternating: `AbCdEf`
-- Random: `aBcDeF`
-- First upper: `Abcdef`
+## Tests
 
-**SubstitutionTransformer**: Custom substitution rules
-- One-to-many mappings
-- Probabilistic selection
+- `tests/unit`: one file per component.
+- `tests/integration`: pipelines (corpus → model → generator → filters/transformers), multi-corpus, visualisation.
+- `tests/e2e`: the installed `markov-passgen` command, run as a subprocess.
 
-**TransformerChain**: Applies transformers in sequence
+CI runs them on Python 3.9–3.13 for every push and pull request, and releases are published only after they pass.
 
-### Visualization Module (`src/markov_passgen/visualization/`)
+## Extending
 
-#### NGramVisualizer
-Creates statistical plots using matplotlib/seaborn.
+New filters subclass `BaseFilter` and implement `filter(passwords)`; new candidate transformations subclass `BasePasswordTransformer` and implement `transform(password)`. Both drop straight into `FilterChain` and `TransformerChain`.
 
-**Supported Visualizations:**
-1. N-gram frequency bar charts
-2. Entropy distribution histograms
-3. Length distribution histograms
-4. Character frequency charts
-5. Multi-corpus comparison plots
+## Security notes
 
-**Output Formats:**
-- PNG (raster, 300 DPI)
-- JPG (compressed raster, 300 DPI)
-- SVG (vector)
-- PDF (vector)
-
-### CLI Module (`src/markov_passgen/cli.py`)
-
-Uses Click framework for command-line interface.
-
-**Commands:**
-- `generate`: Password generation
-- `visualize-corpus`: Corpus analysis
-- `visualize-passwords`: Password analysis
-- `visualize-multi-corpus`: Corpus comparison
-
-## Data Flow
-
-### Simple Generation Flow
-```
-Text File → CorpusLoader → Raw Text
-                              ↓
-                         NGramBuilder → N-Gram Model
-                                            ↓
-                                    PasswordGenerator → Passwords
-```
-
-### Filtered Generation Flow
-```
-Text File → CorpusLoader → Raw Text
-                              ↓
-                         NGramBuilder → N-Gram Model
-                                            ↓
-                                    PasswordGenerator
-                                            ↓
-                                      FilterChain
-                                     (Length, CharSet, Entropy)
-                                            ↓
-                                    Filtered Passwords
-```
-
-### Multi-Corpus Flow
-```
-Corpus 1 (weight 0.5) ─┐
-Corpus 2 (weight 0.3) ─┼→ MultiCorpusManager
-Corpus 3 (weight 0.2) ─┘        ↓
-                          Build Merged Model
-                                 ↓
-                          PasswordGenerator → Passwords
-```
-
-### Transformation Flow
-```
-Generated Password → TransformerChain
-                        ↓
-                    LeetSpeak → CaseVariation → Substitution
-                                                      ↓
-                                             Transformed Password
-```
-
-## Performance Considerations
-
-### N-Gram Building
-- **Time Complexity**: O(n) where n is text length
-- **Space Complexity**: O(k) where k is unique n-grams
-- **Optimization**: Use dict for O(1) lookups
-
-### Password Generation
-- **Time Complexity**: O(m*l) where m is count, l is avg length
-- **Space Complexity**: O(m*l) for storing passwords
-- **Optimization**: Weighted random selection using cumulative sums
-
-### Filtering
-- **Time Complexity**: O(m*f) where f is filter count
-- **Space Complexity**: O(1) per filter
-- **Optimization**: Short-circuit evaluation in FilterChain
-
-### Multi-Corpus Merging
-- **Time Complexity**: O(k*c) where k is n-grams, c is corpus count
-- **Space Complexity**: O(k) for merged model
-- **Optimization**: In-place frequency accumulation
-
-## Testing Strategy
-
-### Unit Tests
-Test individual components in isolation:
-- Each class has dedicated test file
-- Mock dependencies
-- Test edge cases and error conditions
-
-### Integration Tests
-Test component interactions:
-- Corpus → Model → Generator pipeline
-- Filter chains
-- Transformer chains
-- Multi-corpus workflows
-
-### End-to-End Tests
-Test complete user workflows:
-- CLI command execution
-- File I/O
-- Full generation pipelines
-
-### Coverage Goals
-- Overall: 85%+
-- Core modules: 90%+
-- Filters: 100%
-- Transformers: 95%+
-
-## Extension Points
-
-### Adding New Filters
-```python
-class CustomFilter(BaseFilter):
-    def apply(self, password: str) -> bool:
-        # Implement custom logic
-        return meets_criteria
-```
-
-### Adding New Transformers
-```python
-class CustomTransformer(PasswordTransformer):
-    def transform(self, password: str) -> str:
-        # Implement transformation
-        return transformed
-```
-
-### Adding New Visualizations
-```python
-class CustomVisualizer(NGramVisualizer):
-    def plot_custom(self, data, output_path):
-        # Create custom plot
-        plt.savefig(output_path)
-```
-
-## Security Architecture
-
-### Threat Model
-- **Not a cryptographic tool**: Passwords are predictable
-- **Research purposes only**: Not for production use
-- **No sensitive data**: Don't train on real passwords
-
-### Design Decisions
-- No password hashing (not needed for generation)
-- No network communication (offline tool)
-- No persistent storage (stateless)
-
-## Future Enhancements
-
-### Planned Features
-1. **GPU Acceleration**: Faster n-gram building
-2. **Distributed Generation**: Multi-process password generation
-3. **Real-time Analysis**: Live entropy/strength feedback
-4. **Custom Alphabets**: Support for non-ASCII characters
-5. **Pattern Detection**: Identify common patterns in generated passwords
-
-### API Stability
-- Core interfaces are stable
-- Internal implementations may change
-- Breaking changes will bump major version
-
-## References
-
-- [Markov Chains](https://en.wikipedia.org/wiki/Markov_chain)
-- [Shannon Entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory))
-- [Password Strength](https://en.wikipedia.org/wiki/Password_strength)
+- Candidates are predictable by design: the point is to model how people pick passwords. Don't use them as real passwords.
+- The tool is offline and stateless: it reads corpora, writes wordlists and plots, and nothing else.
+- Use it for research, teaching and testing you're authorized to do.
