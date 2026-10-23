@@ -157,16 +157,118 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
         raise click.Abort()
 
 
+def _corpus_options(func):
+    """Options for reading corpora and building a model (shared by train and generate)"""
+    options = [
+        click.option('--corpus', type=click.Path(exists=True), help='Path to single corpus file'),
+        click.option('--corpus-list', multiple=True, type=click.Path(exists=True),
+                     help='Paths to multiple corpus files (repeatable)'),
+        click.option('--corpus-weights', type=str,
+                     help="Comma-separated weights, each corpus's share of the model (e.g. \"0.5,0.3,0.2\")"),
+        click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)'),
+        click.option('--stream', is_flag=True,
+                     help='Read the corpus as one continuous text instead of one entry per line'),
+        click.option('--lowercase', is_flag=True, help='Convert corpus to lowercase'),
+        click.option('--remove-punctuation', is_flag=True, help='Remove punctuation from corpus'),
+        click.option('--remove-digits', is_flag=True, help='Remove digits from corpus'),
+        click.option('--normalize-whitespace', is_flag=True, help='Normalize whitespace in corpus'),
+    ]
+    for option in reversed(options):
+        func = option(func)
+    return func
+
+
+def _build_model(corpus, corpus_list, corpus_weights, ngram_size, stream,
+                 lowercase, remove_punctuation, remove_digits, normalize_whitespace):
+    """Load the corpus (or corpora) and build the n-gram model, reporting progress"""
+    from markov_passgen.core.multi_corpus_manager import MultiCorpusManager
+    from markov_passgen.transformers.text_cleaner import TextCleaner
+
+    if not corpus and not corpus_list:
+        click.echo("Error: Must specify either --corpus or --corpus-list", err=True)
+        raise click.Abort()
+    if corpus and corpus_list:
+        click.echo("Error: Cannot use both --corpus and --corpus-list", err=True)
+        raise click.Abort()
+
+    cleaner = None
+    if lowercase or remove_punctuation or remove_digits or normalize_whitespace:
+        cleaner = TextCleaner(
+            lowercase=lowercase,
+            remove_punctuation=remove_punctuation,
+            remove_digits=remove_digits,
+            normalize_whitespace=normalize_whitespace
+        )
+        click.echo("Text preprocessing enabled")
+
+    if corpus_list:
+        click.echo(f"Loading {len(corpus_list)} corpus files...")
+        weights = None
+        if corpus_weights:
+            try:
+                weights = [float(w.strip()) for w in corpus_weights.split(',')]
+            except ValueError:
+                click.echo("Error: Invalid weight format. Use comma-separated numbers (e.g., '1.0,2.0,1.5')", err=True)
+                raise click.Abort()
+            if len(weights) != len(corpus_list):
+                click.echo(f"Error: Number of weights ({len(weights)}) must match number of corpora ({len(corpus_list)})", err=True)
+                raise click.Abort()
+            click.echo(f"Using corpus weights: {weights}")
+
+        manager = MultiCorpusManager.from_files(list(corpus_list), weights=weights, cleaner=cleaner)
+        for name, corpus_stats in manager.get_corpus_stats().items():
+            click.echo(f"  {name}: {corpus_stats['char_count']} chars, {corpus_stats['word_count']} words, weight={corpus_stats['weight']}")
+
+        # Merge the per-corpus models, each scaled to its weight's share
+        click.echo(f"Building {ngram_size}-gram model...")
+        model = manager.build_model(n=ngram_size, per_line=not stream)
+    else:
+        loader = CorpusLoader()
+        click.echo(f"Loading corpus from {corpus}...")
+        text = loader.load_from_file(corpus, cleaner=cleaner)
+        if not loader.validate_corpus(text):
+            click.echo("Error: Corpus must be at least 100 characters", err=True)
+            raise click.Abort()
+        stats = loader.get_corpus_stats()
+        click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
+
+        # One entry per line, unless --stream
+        click.echo(f"Building {ngram_size}-gram model...")
+        builder = NGramBuilder()
+        model = builder.build(text, n=ngram_size) if stream else builder.build_lines(text, n=ngram_size)
+
+    click.echo(f"Model built with {len(model)} n-grams")
+    return model
+
+
 @main.command()
-@click.option('--corpus', type=click.Path(exists=True), help='Path to single corpus file')
-@click.option('--corpus-list', multiple=True, type=click.Path(exists=True), help='Paths to multiple corpus files (repeatable)')
-@click.option('--corpus-weights', type=str, help='Comma-separated weights for each corpus (e.g., "1.0,2.0,1.5")')
+@_corpus_options
+@click.option('--output', required=True, type=click.Path(), help='Where to save the model (JSON)')
+def train(corpus, corpus_list, corpus_weights, ngram_size, stream, lowercase, remove_punctuation,
+          remove_digits, normalize_whitespace, output):
+    """Build a model once and save it, for generate --model"""
+    try:
+        import json
+        model = _build_model(corpus, corpus_list, corpus_weights, ngram_size, stream,
+                             lowercase, remove_punctuation, remove_digits, normalize_whitespace)
+        with open(output, 'w', encoding='utf-8') as f:
+            json.dump(model, f)
+        click.echo(f"Model saved to {output}")
+    except click.Abort:
+        raise
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@main.command()
+@_corpus_options
+@click.option('--model', 'model_file', type=click.Path(exists=True),
+              help='Use a model saved by train instead of a corpus')
 @click.option('--count', default=100, help='Number of passwords to generate')
 @click.option('--length', type=click.IntRange(min=1), help='Exact length of every candidate (default: lengths follow the corpus)')
-@click.option('--ngram-size', default=2, type=click.IntRange(2, 5), help='N-gram size (2-5)')
 @click.option('--min-length', type=click.IntRange(min=1), help='Shortest candidate to generate')
 @click.option('--max-length', type=click.IntRange(min=1), help='Longest candidate to generate (default 64)')
-@click.option('--stream', is_flag=True, help='Read the corpus as one continuous text instead of one entry per line')
 @click.option('--require-digits', is_flag=True, help='Require at least one digit')
 @click.option('--require-uppercase', is_flag=True, help='Require at least one uppercase letter')
 @click.option('--require-lowercase', is_flag=True, help='Require at least one lowercase letter')
@@ -177,97 +279,35 @@ def visualize_multi_corpus(corpus_list, corpus_weights, output):
               help='Keep candidates whose average bits per character under the model is at least this (typically 1-4)')
 @click.option('--seed-word', type=str, help='Seed word to start generation')
 @click.option('--random-seed', type=int, help='Random seed for deterministic generation')
-@click.option('--lowercase', is_flag=True, help='Convert corpus to lowercase')
-@click.option('--remove-punctuation', is_flag=True, help='Remove punctuation from corpus')
-@click.option('--remove-digits', is_flag=True, help='Remove digits from corpus')
-@click.option('--normalize-whitespace', is_flag=True, help='Normalize whitespace in corpus')
 @click.option('--leet-speak', type=float, help='Apply leet speak transformation (0.0-1.0 intensity)')
 @click.option('--case-variation', type=click.Choice(['random', 'alternating', 'capitalize']), help='Apply case variation')
 @click.option('--output', default='wordlist.txt', help='Output file')
-def generate(corpus, corpus_list, corpus_weights, count, length, ngram_size, min_length, max_length,
-             stream, require_digits, require_uppercase, require_lowercase, require_special,
-             min_markov_bits, min_entropy, seed_word, random_seed, lowercase, remove_punctuation,
-             remove_digits, normalize_whitespace, leet_speak, case_variation, output):
-    """Generate passwords from corpus"""
+def generate(corpus, corpus_list, corpus_weights, ngram_size, stream, lowercase, remove_punctuation,
+             remove_digits, normalize_whitespace, model_file, count, length, min_length, max_length,
+             require_digits, require_uppercase, require_lowercase, require_special,
+             min_markov_bits, min_entropy, seed_word, random_seed, leet_speak, case_variation, output):
+    """Generate passwords from a corpus or a saved model"""
     try:
         from markov_passgen.filters.length_filter import LengthFilter
         from markov_passgen.filters.character_filter import CharacterFilter
         from markov_passgen.filters.filter_chain import FilterChain
-        from markov_passgen.transformers.text_cleaner import TextCleaner
         from markov_passgen.transformers.password_transformer import (
             LeetSpeakTransformer, CaseVariationTransformer, TransformerChain
         )
-        from markov_passgen.core.multi_corpus_manager import MultiCorpusManager
-        
-        # Validate corpus options
-        if not corpus and not corpus_list:
-            click.echo("Error: Must specify either --corpus or --corpus-list", err=True)
-            raise click.Abort()
-        
-        if corpus and corpus_list:
-            click.echo("Error: Cannot use both --corpus and --corpus-list", err=True)
-            raise click.Abort()
-        
-        # Create text cleaner if any preprocessing options are set
-        cleaner = None
-        if lowercase or remove_punctuation or remove_digits or normalize_whitespace:
-            cleaner = TextCleaner(
-                lowercase=lowercase,
-                remove_punctuation=remove_punctuation,
-                remove_digits=remove_digits,
-                normalize_whitespace=normalize_whitespace
-            )
-            click.echo("Text preprocessing enabled")
-        
-        # Load corpus - single or multi
-        text = None
-        if corpus_list:
-            # Multi-corpus mode
-            click.echo(f"Loading {len(corpus_list)} corpus files...")
-            
-            # Parse weights if provided
-            weights = None
-            if corpus_weights:
-                try:
-                    weights = [float(w.strip()) for w in corpus_weights.split(',')]
-                    if len(weights) != len(corpus_list):
-                        click.echo(f"Error: Number of weights ({len(weights)}) must match number of corpora ({len(corpus_list)})", err=True)
-                        raise click.Abort()
-                    click.echo(f"Using corpus weights: {weights}")
-                except ValueError:
-                    click.echo("Error: Invalid weight format. Use comma-separated numbers (e.g., '1.0,2.0,1.5')", err=True)
-                    raise click.Abort()
-            
-            # Create multi-corpus manager
-            manager = MultiCorpusManager.from_files(list(corpus_list), weights=weights, cleaner=cleaner)
-            
-            # Display corpus stats
-            stats = manager.get_corpus_stats()
-            for name, corpus_stats in stats.items():
-                click.echo(f"  {name}: {corpus_stats['char_count']} chars, {corpus_stats['word_count']} words, weight={corpus_stats['weight']}")
-            
-            # Merge the per-corpus models, each scaled to its weight's share
-            click.echo(f"Building {ngram_size}-gram model...")
-            model = manager.build_model(n=ngram_size, per_line=not stream)
-        else:
-            # Single corpus mode
-            loader = CorpusLoader()
-            click.echo(f"Loading corpus from {corpus}...")
-            text = loader.load_from_file(corpus, cleaner=cleaner)
-            
-            # Validate corpus
-            if not loader.validate_corpus(text):
-                click.echo("Error: Corpus must be at least 100 characters", err=True)
-                raise click.Abort()
-            
-            stats = loader.get_corpus_stats()
-            click.echo(f"Corpus loaded: {stats['char_count']} chars, {stats['word_count']} words")
 
-            # Build n-gram model: one entry per line, unless --stream
-            click.echo(f"Building {ngram_size}-gram model...")
-            builder = NGramBuilder()
-            model = builder.build(text, n=ngram_size) if stream else builder.build_lines(text, n=ngram_size)
-        click.echo(f"Model built with {len(model)} n-grams")
+        if model_file:
+            if corpus or corpus_list:
+                click.echo("Error: Use either --model or a corpus, not both", err=True)
+                raise click.Abort()
+            click.echo(f"Loading model from {model_file}...")
+            model = NGramBuilder().load_model(model_file)
+            if not model:
+                click.echo("Error: The model file is empty", err=True)
+                raise click.Abort()
+            click.echo(f"Model loaded with {len(model)} n-grams")
+        else:
+            model = _build_model(corpus, corpus_list, corpus_weights, ngram_size, stream,
+                                 lowercase, remove_punctuation, remove_digits, normalize_whitespace)
         
         # Set random seed if specified
         generator = PasswordGenerator(model)

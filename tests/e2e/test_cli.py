@@ -67,7 +67,7 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, ['generate', '--help'])
         assert result.exit_code == 0
-        assert 'Generate passwords from corpus' in result.output
+        assert 'Generate passwords from a corpus or a saved model' in result.output
     
     def test_invalid_corpus_file(self):
         """Test with non-existent corpus file"""

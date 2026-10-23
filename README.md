@@ -67,6 +67,13 @@ markov-passgen generate \
 qwerty1234567  password123  1234567p  password123456  qwerty1234567  surerty123  password1  flowerty123
 ```
 
+Train once on a big corpus and reuse the model:
+
+```bash
+markov-passgen train --corpus big_wordlist.txt --ngram-size 4 --output model.json
+markov-passgen generate --model model.json --count 1000 --output candidates.txt
+```
+
 Apply leetspeak to fixed-length candidates:
 
 ```bash
@@ -219,6 +226,7 @@ Run `markov-passgen <command> --help` for the full list.
 | Option | Meaning |
 |---|---|
 | `--corpus PATH` | Corpus file |
+| `--model PATH` | Use a model saved by `train` instead of a corpus |
 | `--corpus-list PATH` | Corpus file for multi-corpus mode (repeat for each file) |
 | `--corpus-weights "W1,W2,..."` | Comma-separated weights, one per `--corpus-list`; each is that corpus's share of the model |
 | `--ngram-size 2-5` | N-gram size (default 2) |
@@ -235,6 +243,10 @@ Run `markov-passgen <command> --help` for the full list.
 | `--leet-speak 0.0-1.0` | Leetspeak intensity |
 | `--case-variation random\|alternating\|capitalize` | Case variation |
 | `--output PATH` | Output file (default `wordlist.txt`) |
+
+### `train`
+
+Builds the model and saves it as JSON. Takes the same corpus options as `generate` (`--corpus` or `--corpus-list` with `--corpus-weights`, `--ngram-size`, `--stream`, the cleaning flags), plus `--output PATH` (required).
 
 ### `visualize-corpus`
 
