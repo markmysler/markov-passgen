@@ -1,7 +1,8 @@
 # Markov PassGen
 
+[![CI](https://github.com/markmysler/markov-passgen/actions/workflows/ci.yml/badge.svg)](https://github.com/markmysler/markov-passgen/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/markov-passgen.svg)](https://pypi.org/project/markov-passgen/)
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python versions](https://img.shields.io/pypi/pyversions/markov-passgen.svg)](https://pypi.org/project/markov-passgen/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Generate human-like password candidates with Markov chains. Train a character n-gram model on a text corpus (leaked-password lists, dictionaries, usernames) and sample new candidates that follow the same patterns: useful for password-strength research, wordlists for authorized penetration tests, and teaching how predictable "random" passwords are.
