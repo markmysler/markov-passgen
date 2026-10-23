@@ -272,6 +272,8 @@ Builds the model and saves it as JSON. Takes the same corpus options as `generat
 ```bash
 pip install -e ".[dev]"
 pytest
+ruff check src tests
+mypy src
 ```
 
 The tests are split into `tests/unit`, `tests/integration` and `tests/e2e`. The end-to-end tests call the installed `markov-passgen` command, so install the package first.

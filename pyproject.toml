@@ -43,8 +43,7 @@ dev = [
     "markov-passgen[viz]",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
+    "ruff>=0.5.0",
     "mypy>=1.0.0",
     "build>=0.10.0",
     "twine>=4.0.0",
@@ -69,11 +68,20 @@ python_functions = ["test_*"]
 # Coverage is opt-in (pytest --cov=markov_passgen); CI turns it on
 addopts = "-ra"
 
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, import order, bugbear
+select = ["E", "F", "W", "I", "B"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+# Plotting libraries without type stubs
+module = ["seaborn", "scipy"]
+ignore_missing_imports = true

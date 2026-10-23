@@ -1,9 +1,9 @@
 """Password generation using Markov chains"""
 
 import random
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Set, Tuple
 
-from markov_passgen.core.ngram_builder import END, START, is_line_model
+from markov_passgen.core.ngram_builder import END, START, NGramModel, is_line_model
 
 # Upper bound for a line-mode candidate when no max_length is given
 DEFAULT_MAX_LENGTH = 64
@@ -30,7 +30,7 @@ class PasswordGenerator:
     instead of padding with uniformly random characters.
     """
 
-    def __init__(self, ngram_model: Dict[str, Dict[str, int]]):
+    def __init__(self, ngram_model: NGramModel):
         """Initialize generator with n-gram model
 
         Args:
@@ -159,7 +159,7 @@ class PasswordGenerator:
 
         # Replace ALL leading and trailing whitespace with non-space chars
         # Get non-whitespace characters from model once
-        all_nonspace_chars = set()
+        all_nonspace_chars: Set[str] = set()
         for next_chars in self._model.values():
             all_nonspace_chars.update(char for char in next_chars.keys() if not char.isspace())
 
@@ -190,7 +190,7 @@ class PasswordGenerator:
         offers nothing usable (e.g. only END when END isn't allowed yet) is
         skipped.
         """
-        candidates = [self._model.get(context)]
+        candidates: List[Optional[Mapping[str, float]]] = [self._model.get(context)]
         tables = self._backoff_tables()
         for k in range(min(len(context), self._n) - 1, -1, -1):
             candidates.append(tables[k].get(context[len(context) - k:] if k else ""))
@@ -243,7 +243,7 @@ class PasswordGenerator:
         from markov_passgen.core.entropy_calculator import EntropyCalculator
 
         calculator = EntropyCalculator()
-        results = []
+        results: List[Tuple[str, float]] = []
         attempts = 0
 
         # Generate passwords until we have enough or hit max attempts
