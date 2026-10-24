@@ -1,138 +1,77 @@
 # Markov PassGen Examples
 
-This directory contains sample corpus files for testing and demonstration purposes.
+Small sample corpora for trying the tool out. Run the commands below from the repository root.
 
-## Sample Corpora
+## Sample corpora
 
-### common_passwords.txt
-A collection of common passwords frequently found in password breaches. Useful for:
-- Generating realistic password patterns
-- Testing password strength validators
-- Security research on password patterns
+| File | Contents | Size |
+|---|---|---|
+| `common_passwords.txt` | Common passwords from public breach lists | ~50 entries |
+| `english_words.txt` | Common English words | ~1,600 words |
+| `usernames.txt` | Technical and role-based usernames | ~60 entries |
 
-**Size**: ~50 common passwords
+They're tiny on purpose; real corpora give more varied output.
 
-### english_words.txt
-Common English words covering various categories. Useful for:
-- Generating pronounceable password candidates
-- Creating word-based password patterns
-- Text analysis and visualization
+## CLI
 
-**Size**: ~1000 common English words
-
-### usernames.txt
-Technical usernames and role-based identifiers. Useful for:
-- Generating username-based password patterns
-- Multi-corpus mixing experiments
-- Role-based password generation
-
-**Size**: ~60 common usernames
-
-## Usage Examples
-
-### Basic Generation
-
-Generate passwords from a single corpus:
+Single corpus:
 
 ```bash
-markov-passgen generate --corpus common_passwords.txt --count 20
+markov-passgen generate --corpus examples/common_passwords.txt --count 20
 ```
 
-### Multi-Corpus Generation
-
-Combine multiple corpora with weights:
+Several corpora, each weighted by its share of the model:
 
 ```bash
 markov-passgen generate \
-    --corpus-list common_passwords.txt \
-    --corpus-list english_words.txt \
-    --corpus-list usernames.txt \
+    --corpus-list examples/common_passwords.txt \
+    --corpus-list examples/english_words.txt \
+    --corpus-list examples/usernames.txt \
     --corpus-weights "0.5,0.3,0.2" \
     --count 50 \
-    --min-length 12 \
-    --max-length 16
+    --min-length 8 \
+    --max-length 14
 ```
 
-### With Filters
-
-Apply filters to generated passwords:
+With filters:
 
 ```bash
 markov-passgen generate \
-    --corpus english_words.txt \
+    --corpus examples/english_words.txt \
+    --ngram-size 3 \
     --count 100 \
     --min-length 10 \
-    --require-digit \
-    --require-special \
-    --min-entropy 40 \
+    --require-digits \
+    --leet-speak 0.5 \
+    --min-markov-bits 15 \
     --output wordlist.txt
 ```
 
-### Visualization
-
-Analyze corpus characteristics:
+Plots (needs `pip install "markov-passgen[viz]"`):
 
 ```bash
-markov-passgen visualize-corpus \
-    --corpus common_passwords.txt \
-    --ngram-freq ngram_analysis.png \
-    --char-dist char_analysis.png \
-    --top-n 20
+markov-passgen visualize-corpus --corpus examples/common_passwords.txt --ngram-freq ngram_analysis.png --char-dist char_analysis.png --top-n 20
+markov-passgen visualize-multi-corpus --corpus-list examples/common_passwords.txt --corpus-list examples/english_words.txt --corpus-list examples/usernames.txt --corpus-weights "0.5,0.3,0.2" --output corpus_comparison.png
 ```
 
-Compare multiple corpora:
-
-```bash
-markov-passgen visualize-multi-corpus \
-    --corpus-list common_passwords.txt \
-    --corpus-list english_words.txt \
-    --corpus-list usernames.txt \
-    --corpus-weights "0.5,0.3,0.2" \
-    --output corpus_comparison.png
-```
-
-## Python API Examples
-
-### Load and Generate
+## Python
 
 ```python
-from markov_passgen.core import CorpusLoader, NGramBuilder, PasswordGenerator
+from markov_passgen.core import CorpusLoader, MultiCorpusManager, NGramBuilder, PasswordGenerator
 
-# Load corpus
-loader = CorpusLoader("examples/common_passwords.txt")
-text = loader.load()
+text = CorpusLoader().load_from_file("examples/common_passwords.txt")
+generator = PasswordGenerator(NGramBuilder().build_lines(text, n=3))
+print(generator.generate(count=10, min_length=6, max_length=12))
 
-# Build model
-builder = NGramBuilder(ngram_size=3)
-model = builder.build_model(text)
-
-# Generate passwords
-generator = PasswordGenerator(model, min_length=8, max_length=16)
-passwords = generator.generate(count=10)
+manager = MultiCorpusManager()
+manager.add_corpus("passwords", "examples/common_passwords.txt", weight=0.5)
+manager.add_corpus("words", "examples/english_words.txt", weight=0.3)
+manager.add_corpus("users", "examples/usernames.txt", weight=0.2)
+print(PasswordGenerator(manager.build_model(n=3)).generate(count=10))
 ```
 
-### Multi-Corpus
-
-```python
-from markov_passgen.core import MultiCorpusManager, PasswordGenerator
-
-# Create multi-corpus manager
-manager = MultiCorpusManager(ngram_size=3)
-manager.add_corpus("examples/common_passwords.txt", weight=0.5)
-manager.add_corpus("examples/english_words.txt", weight=0.3)
-manager.add_corpus("examples/usernames.txt", weight=0.2)
-
-# Build merged model
-model = manager.build_merged_model()
-
-# Generate passwords
-generator = PasswordGenerator(model, min_length=10, max_length=16)
-passwords = generator.generate(count=50)
-```
+More in the [tutorial](../docs/getting_started.md).
 
 ## Notes
 
-- These corpora are for **testing and educational purposes only**
-- Do not use generated passwords for real systems
-- Always add your own corpus files for production use cases
-- Larger corpora generally produce more diverse results
+These corpora and anything generated from them are for testing and teaching. Don't use generated candidates as real passwords.

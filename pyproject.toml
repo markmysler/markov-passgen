@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "markov-passgen"
-version = "1.0.0"
+version = "1.1.0"
 description = "Generate human-like password candidates using Markov chains"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Markov PassGen", email = "bot@markovpassgen.dev"}
+    {name = "Mark Mysler"}
 ]
 keywords = ["password", "generator", "markov", "security", "wordlist"]
 classifiers = [
@@ -19,11 +19,11 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
@@ -31,20 +31,28 @@ classifiers = [
 
 dependencies = [
     "click>=8.0.0",
-    "tqdm>=4.65.0",
-    "graphviz>=0.20",
 ]
 
 [project.optional-dependencies]
+viz = [
+    "matplotlib>=3.5",
+    "numpy>=1.21",
+    "seaborn>=0.12",
+]
 dev = [
+    "markov-passgen[viz]",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
+    "ruff>=0.5.0",
     "mypy>=1.0.0",
     "build>=0.10.0",
     "twine>=4.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/markmysler/markov-passgen"
+Source = "https://github.com/markmysler/markov-passgen"
+Issues = "https://github.com/markmysler/markov-passgen/issues"
 
 [project.scripts]
 markov-passgen = "markov_passgen.cli:main"
@@ -57,13 +65,22 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=src/markov_passgen --cov-report=html --cov-report=term-missing"
+# Coverage is opt-in (pytest --cov=markov_passgen); CI turns it on
+addopts = "-ra"
 
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, import order, bugbear
+select = ["E", "F", "W", "I", "B"]
 
 [tool.mypy]
-python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+# Plotting libraries without type stubs
+module = ["seaborn", "scipy"]
+ignore_missing_imports = true

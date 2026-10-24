@@ -1,32 +1,31 @@
 """Password transformation utilities"""
 
 import random
-import string
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import Dict, List, Optional
 
 
 class BasePasswordTransformer(ABC):
     """Abstract base class for password transformations"""
-    
+
     @abstractmethod
     def transform(self, password: str) -> str:
         """Transform a password
-        
+
         Args:
             password: Input password
-            
+
         Returns:
             Transformed password
         """
         pass
-    
+
     def transform_batch(self, passwords: List[str]) -> List[str]:
         """Transform multiple passwords
-        
+
         Args:
             passwords: List of passwords
-            
+
         Returns:
             List of transformed passwords
         """
@@ -35,7 +34,7 @@ class BasePasswordTransformer(ABC):
 
 class LeetSpeakTransformer(BasePasswordTransformer):
     """Transform passwords using leet speak substitutions
-    
+
     Common substitutions:
     - a/A -> 4
     - e/E -> 3
@@ -44,16 +43,16 @@ class LeetSpeakTransformer(BasePasswordTransformer):
     - s/S -> 5
     - t/T -> 7
     """
-    
+
     def __init__(self, intensity: float = 0.5):
         """Initialize leet speak transformer
-        
+
         Args:
             intensity: Probability of applying substitution (0.0 to 1.0)
         """
         if not 0.0 <= intensity <= 1.0:
             raise ValueError("Intensity must be between 0.0 and 1.0")
-        
+
         self.intensity = intensity
         self.substitutions = {
             'a': '4', 'A': '4',
@@ -65,13 +64,13 @@ class LeetSpeakTransformer(BasePasswordTransformer):
             'g': '9', 'G': '9',
             'b': '8', 'B': '8'
         }
-    
+
     def transform(self, password: str) -> str:
         """Apply leet speak transformation
-        
+
         Args:
             password: Input password
-            
+
         Returns:
             Leet speak transformed password
         """
@@ -86,19 +85,19 @@ class LeetSpeakTransformer(BasePasswordTransformer):
 
 class CaseVariationTransformer(BasePasswordTransformer):
     """Transform passwords with case variations
-    
+
     Modes:
     - random: Random case for each letter
     - alternating: Alternate between upper and lower
     - capitalize: Capitalize first letter of each word
     """
-    
+
     def __init__(self, mode: str = "random"):
         """Initialize case variation transformer
-        
+
         Args:
             mode: Variation mode - 'random', 'alternating', 'capitalize'
-            
+
         Raises:
             ValueError: If mode is invalid
         """
@@ -106,13 +105,13 @@ class CaseVariationTransformer(BasePasswordTransformer):
         if mode not in valid_modes:
             raise ValueError(f"Invalid mode: {mode}. Must be one of {valid_modes}")
         self.mode = mode
-    
+
     def transform(self, password: str) -> str:
         """Apply case variation
-        
+
         Args:
             password: Input password
-            
+
         Returns:
             Case-varied password
         """
@@ -123,7 +122,7 @@ class CaseVariationTransformer(BasePasswordTransformer):
         elif self.mode == 'capitalize':
             return self._capitalize_words(password)
         return password
-    
+
     def _random_case(self, password: str) -> str:
         """Apply random case to each letter"""
         result = []
@@ -133,7 +132,7 @@ class CaseVariationTransformer(BasePasswordTransformer):
             else:
                 result.append(char)
         return ''.join(result)
-    
+
     def _alternating_case(self, password: str) -> str:
         """Apply alternating case"""
         result = []
@@ -145,7 +144,7 @@ class CaseVariationTransformer(BasePasswordTransformer):
             else:
                 result.append(char)
         return ''.join(result)
-    
+
     def _capitalize_words(self, password: str) -> str:
         """Capitalize first letter of each word"""
         words = password.split()
@@ -154,29 +153,29 @@ class CaseVariationTransformer(BasePasswordTransformer):
 
 class SubstitutionTransformer(BasePasswordTransformer):
     """Transform passwords using custom character substitutions"""
-    
-    def __init__(self, substitutions: Dict[str, str] = None, probability: float = 1.0):
+
+    def __init__(self, substitutions: Optional[Dict[str, str]] = None, probability: float = 1.0):
         """Initialize substitution transformer
-        
+
         Args:
             substitutions: Dictionary mapping characters to replacements
             probability: Probability of applying each substitution (0.0 to 1.0)
-            
+
         Raises:
             ValueError: If probability is out of range
         """
         if not 0.0 <= probability <= 1.0:
             raise ValueError("Probability must be between 0.0 and 1.0")
-        
+
         self.substitutions = substitutions or {}
         self.probability = probability
-    
+
     def transform(self, password: str) -> str:
         """Apply custom substitutions
-        
+
         Args:
             password: Input password
-            
+
         Returns:
             Transformed password
         """
@@ -187,23 +186,23 @@ class SubstitutionTransformer(BasePasswordTransformer):
             else:
                 result.append(char)
         return ''.join(result)
-    
+
     def add_substitution(self, from_char: str, to_char: str) -> None:
         """Add a character substitution
-        
+
         Args:
             from_char: Character to replace
             to_char: Replacement character
         """
         self.substitutions[from_char] = to_char
-    
+
     @staticmethod
     def special_chars_transformer(probability: float = 1.0) -> 'SubstitutionTransformer':
         """Create transformer that adds special characters
-        
+
         Args:
             probability: Substitution probability
-            
+
         Returns:
             Configured SubstitutionTransformer
         """
@@ -218,29 +217,29 @@ class SubstitutionTransformer(BasePasswordTransformer):
 
 class TransformerChain(BasePasswordTransformer):
     """Chain multiple transformers together"""
-    
+
     def __init__(self):
         """Initialize empty transformer chain"""
         self.transformers: List[BasePasswordTransformer] = []
-    
+
     def add(self, transformer: BasePasswordTransformer) -> 'TransformerChain':
         """Add transformer to chain
-        
+
         Args:
             transformer: Transformer to add
-            
+
         Returns:
             Self for method chaining
         """
         self.transformers.append(transformer)
         return self
-    
+
     def transform(self, password: str) -> str:
         """Apply all transformers in sequence
-        
+
         Args:
             password: Input password
-            
+
         Returns:
             Fully transformed password
         """
@@ -248,7 +247,7 @@ class TransformerChain(BasePasswordTransformer):
         for transformer in self.transformers:
             result = transformer.transform(result)
         return result
-    
+
     def clear(self) -> None:
         """Remove all transformers"""
         self.transformers.clear()

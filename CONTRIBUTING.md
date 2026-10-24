@@ -63,14 +63,13 @@ We are committed to providing a welcoming and inclusive environment for all cont
 3. **Run Tests**
    ```bash
    pytest
-   pytest --cov=src/markov_passgen --cov-report=html
+   pytest --cov=markov_passgen --cov-report=term-missing
    ```
 
-4. **Check Code Quality**
+4. **Check Code Quality** (CI runs the same checks)
    ```bash
-   black src/ tests/
-   flake8 src/ tests/
-   mypy src/
+   ruff check src tests
+   mypy src
    ```
 
 5. **Commit Your Changes**
@@ -114,9 +113,9 @@ We welcome contributions in the following areas:
 Follow PEP 8 with these specifications:
 
 ```python
-# Line length: 100 characters (configured in pyproject.toml)
+# Line length: 120 characters (ruff, configured in pyproject.toml)
 # Indentation: 4 spaces
-# Quotes: Double quotes for strings (enforced by black)
+# Imports: sorted (ruff's isort rules; `ruff check --fix` sorts them)
 
 # Good example
 class PasswordGenerator:
@@ -286,7 +285,7 @@ user feedback in GitHub Discussions.
 1. **Before Submitting**
    - Ensure all tests pass
    - Verify code coverage meets requirements
-   - Run code quality checks (black, flake8, mypy)
+   - Run code quality checks (ruff, mypy)
    - Update documentation
    - Add entry to CHANGELOG.md (if applicable)
 
